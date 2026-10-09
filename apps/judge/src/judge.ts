@@ -1,8 +1,8 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { FinalVerdict, JudgeProgress, Language, TestResult } from "@vibejudge/shared";
+import { timeLimitFor, type FinalVerdict, type JudgeProgress, type Language, type TestResult } from "@vibejudge/shared";
 import { Box, type RunResult } from "./isolate.js";
-import { CHECKER_COMPILE, LANGUAGES } from "./languages.js";
+import { CHECKER_COMPILE, LANGUAGES, type LanguageConfig } from "./languages.js";
 import { compareTokens } from "./compare.js";
 
 export interface TestCase {
@@ -58,23 +58,35 @@ const MAX_LOG = 8 * 1024;
 // cgroup-এ থেকে যায় আর প্রোগ্রামের memory হিসেবে গোনা হয় (~270 MB বাড়তি দেখায়)।
 export const COMPILE_BOX_OFFSET = 500;
 
+/** এক ভাষার জন্য আসলে যা চালানো হবে আর যে সীমায় */
+interface RunPlan {
+  lang: LanguageConfig;
+  command: string[];
+  /** ভাষার গুণক সহ */
+  timeLimitMs: number;
+  /** cgroup-এর সীমা (Java-তে JVM-এর অংশ যোগ করা) */
+  memoryLimitKb: number;
+}
+
 export async function judge(problem: ProblemSpec, submission: Submission, opts: JudgeOptions): Promise<JudgeResult> {
   const lang = LANGUAGES[submission.language];
   // টেস্ট না থাকলে "সব টেস্ট পাস" = AC হয়ে যেত — সেটা ভুল
   if (problem.tests.length === 0) {
     return { verdict: "IE", timeMs: 0, memoryKb: 0, compileOutput: "This problem has no tests yet.", tests: [] };
   }
+  const sourceFile = lang.sourceFile(submission.source);
   const compileBox = await Box.create(opts.boxId + COMPILE_BOX_OFFSET);
   let box: Box | undefined;
   try {
     // ---- 1. Compile ----
     opts.onProgress?.({ phase: "compiling", done: 0, total: problem.tests.length });
-    await writeFile(join(compileBox.dir, lang.sourceFile), submission.source);
-    const compile = await compileBox.run(lang.compile, {
+    await writeFile(join(compileBox.dir, sourceFile), submission.source);
+    const compile = await compileBox.run(lang.compile(sourceFile), {
       limits: COMPILE_LIMITS,
       stdout: "compile.txt",
       stderr: "compile.txt",
       env: COMPILE_ENV,
+      mounts: lang.mounts,
     });
     const compileOutput = await readText(join(compileBox.dir, "compile.txt"));
     if (compile.status) {
@@ -83,13 +95,21 @@ export async function judge(problem: ProblemSpec, submission: Submission, opts: 
     }
 
     box = await Box.create(opts.boxId);
-    await copyFile(join(compileBox.dir, "main"), join(box.dir, "main"));
+    for (const f of await readdir(compileBox.dir)) {
+      if (lang.isArtifact(f, sourceFile)) await copyFile(join(compileBox.dir, f), join(box.dir, f));
+    }
+    const plan: RunPlan = {
+      lang,
+      command: lang.run(submission.source, problem.memoryLimitKb),
+      timeLimitMs: timeLimitFor(problem.timeLimitMs, submission.language),
+      memoryLimitKb: problem.memoryLimitKb + lang.extraMemoryKb,
+    };
 
     // ---- 2. প্রতিটা টেস্ট চালানো ----
     opts.onProgress?.({ phase: "running", done: 0, total: problem.tests.length });
     const results: TestResult[] = [];
     for (const test of problem.tests) {
-      const result = await runTest(box, problem, lang.run, test);
+      const result = await runTest(box, problem, plan, test);
       results.push(result);
       opts.onProgress?.({ phase: "running", done: results.length, total: problem.tests.length });
       if (result.verdict !== "AC" && opts.stopOnFirstFailure !== false) break;
@@ -109,24 +129,29 @@ export async function judge(problem: ProblemSpec, submission: Submission, opts: 
   }
 }
 
-async function runTest(box: Box, problem: ProblemSpec, command: string[], test: TestCase): Promise<TestResult> {
+async function runTest(box: Box, problem: ProblemSpec, plan: RunPlan, test: TestCase): Promise<TestResult> {
   const outPath = join(box.dir, "out.txt");
+  const errPath = join(box.dir, "err.txt");
   await rm(outPath, { force: true });
+  await rm(errPath, { force: true });
 
-  const run = await box.run(command, {
+  const run = await box.run(plan.command, {
     limits: {
-      timeMs: problem.timeLimitMs,
-      wallTimeMs: Math.max(problem.timeLimitMs * 3, problem.timeLimitMs + 2000),
-      memoryKb: problem.memoryLimitKb,
+      timeMs: plan.timeLimitMs,
+      wallTimeMs: Math.max(plan.timeLimitMs * 3, plan.timeLimitMs + 2000),
+      memoryKb: plan.memoryLimitKb,
+      processes: plan.lang.processes,
     },
     stdin: `/tests/${test.input}`,
     stdout: "out.txt",
-    stderr: "/dev/null",
-    mounts: { "/tests": problem.testDir },
+    // C/C++: stderr ফেলে দিই (অনেকে debug-এর জন্য cerr-এ প্রচুর লেখে)
+    stderr: plan.lang.keepStderr ? "err.txt" : "/dev/null",
+    mounts: { "/tests": problem.testDir, ...plan.lang.mounts },
   });
 
   const base = { name: test.name, timeMs: run.timeMs, memoryKb: run.memoryKb };
-  const runVerdict = verdictFromRun(run, problem);
+  const stderr = plan.lang.keepStderr && run.status ? await readText(errPath) : "";
+  const runVerdict = verdictFromRun(run, plan, stderr);
   if (runVerdict) return { ...base, ...runVerdict };
 
   // প্রোগ্রাম ঠিকমতো শেষ হয়েছে — এবার output যাচাই
@@ -137,18 +162,32 @@ async function runTest(box: Box, problem: ProblemSpec, command: string[], test: 
   return { ...base, verdict: cmp.ok ? "AC" : "WA", message: cmp.message };
 }
 
-function verdictFromRun(run: RunResult, problem: ProblemSpec): { verdict: FinalVerdict; message?: string } | null {
-  const nearMemLimit = run.memoryKb >= problem.memoryLimitKb * 0.95;
+function verdictFromRun(run: RunResult, plan: RunPlan, stderr: string): { verdict: FinalVerdict; message?: string } | null {
+  const nearMemLimit = run.memoryKb >= plan.memoryLimitKb * 0.95;
   if (run.status === "XX") return { verdict: "IE", message: run.message };
-  if (run.status === "TO" || run.timeMs > problem.timeLimitMs) return { verdict: "TLE", message: run.message };
+  if (run.status === "TO" || run.timeMs > plan.timeLimitMs) return { verdict: "TLE", message: run.message };
   if (run.oomKilled || (run.status && nearMemLimit)) return { verdict: "MLE" };
+  // Java-র heap ভরে গেলে / Python-এর MemoryError — প্রোগ্রাম নিজে থামে, তবু আসলে MLE
+  if (run.status && /\bjava\.lang\.OutOfMemoryError\b|^MemoryError\b/m.test(stderr)) {
+    return { verdict: "MLE", message: lastLine(stderr) };
+  }
   if (run.status === "SG") {
     // SIGXFSZ (25) = output ফাইল সাইজ সীমা ছাড়িয়েছে
     const msg = run.signal === 25 ? "Output limit exceeded" : `Killed by signal ${run.signal}`;
     return { verdict: "RE", message: msg };
   }
-  if (run.status === "RE") return { verdict: "RE", message: `Exit code ${run.exitCode}` };
+  if (run.status === "RE") {
+    // Java/Python: exception-এর নাম (যেমন "ZeroDivisionError: division by zero") — শুধু author দেখেন
+    return { verdict: "RE", message: lastLine(stderr) || `Exit code ${run.exitCode}` };
+  }
   return null;
+}
+
+/** stderr-এর শেষ লাইন — Python traceback-এর শেষে আসল exception থাকে; Java-তে প্রথম লাইনে */
+function lastLine(stderr: string): string {
+  const lines = stderr.split("\n").map((l) => l.trim()).filter(Boolean);
+  const exceptionLine = lines.find((l) => /^Exception in thread|^java\.lang\.\w+(Error|Exception)/.test(l));
+  return (exceptionLine ?? lines.at(-1) ?? "").slice(0, 200);
 }
 
 // testlib checker exit code: 0 = OK, 1 = WA, 2 = PE, 3 = FAIL (checker/answer-এ সমস্যা), 7 = partial points

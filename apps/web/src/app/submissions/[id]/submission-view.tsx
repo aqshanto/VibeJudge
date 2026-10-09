@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { ContestDetail, SubmissionView as Submission } from "@vibejudge/shared";
+import { LANGUAGE_INFO, type ContestDetail, type SubmissionView as Submission } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { JudgeProgressBar, VerdictBadge } from "../../verdict-badge";
@@ -62,7 +62,7 @@ export function SubmissionView({ id }: { id: string }) {
               {!sub.contest.inContest && " (practice)"}{" "}
             </>
           )}
-          · {sub.language.toUpperCase()}
+          · {LANGUAGE_INFO[sub.language].short}
         </p>
         {!done && <JudgeProgressBar verdict={sub.verdict} progress={sub.progress} queuePosition={sub.queuePosition} />}
         <div className="flex flex-wrap items-center gap-4">

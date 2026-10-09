@@ -31,7 +31,7 @@ async function buildReport(contest: LoadedContest, minSimilarity: number): Promi
   const subs = await prisma!.submission.findMany({
     where: { contestId: contest.id, inContest: true, verdict: { notIn: ["PENDING", "JUDGING", "CE", "IE"] } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, problemId: true, verdict: true, source: true, user: { select: { username: true } } },
+    select: { id: true, problemId: true, verdict: true, source: true, language: true, user: { select: { username: true } } },
   });
 
   // প্রতি প্রবলেমে প্রত্যেকের একটা: শেষ AC, না থাকলে শেষ judged সাবমিশন
@@ -49,7 +49,7 @@ async function buildReport(contest: LoadedContest, minSimilarity: number): Promi
       const list = [...chosen.values()].filter((s) => s.problemId === cp.problem.id);
       const names = new Map(list.map((s) => [s.id, s.user!.username]));
       const { pairs } = findSimilarPairs(
-        list.map((s) => ({ id: s.id, owner: s.user!.username, source: s.source })),
+        list.map((s) => ({ id: s.id, owner: s.user!.username, source: s.source, language: s.language })),
         { minSimilarity },
       );
       return {
@@ -113,13 +113,13 @@ export async function plagiarismRoutes(app: FastifyInstance) {
       // দুটো সাবমিশনই এই কনটেস্টের হতে হবে (অন্য কনটেস্টের কোড এই পথে দেখা যাবে না)
       const subs = await prisma!.submission.findMany({
         where: { id: { in: [req.query.a, req.query.b] }, contestId: contest.id },
-        select: { id: true, problemId: true, verdict: true, source: true, user: { select: { username: true } } },
+        select: { id: true, problemId: true, verdict: true, source: true, language: true, user: { select: { username: true } } },
       });
       const a = subs.find((s) => s.id === req.query.a);
       const b = subs.find((s) => s.id === req.query.b);
       if (!a || !b) return reply.code(404).send({ error: "Submission not found in this contest" });
 
-      const m = matchedLines(a.source, b.source);
+      const m = matchedLines(a, b);
       const result: PlagiarismCompare = {
         similarity: m.similarity,
         label: contest.problems.find((cp) => cp.problem.id === a.problemId)?.label ?? "?",

@@ -10,7 +10,7 @@
 
 | বিষয় | সিদ্ধান্ত |
 |---|---|
-| ভাষা (প্রথম ভার্সন) | C, C++ |
+| ভাষা | C, C++ (প্রথম ভার্সন); Python, Java (৫ক) |
 | প্রবলেম | শুধু কাস্টম প্রবলেম (অন্য OJ-এর প্রবলেম → পরের ফেজে) |
 | পারমিশন | যে কেউ অ্যাকাউন্ট খুলবে; **Author** হতে Admin-এর approval লাগবে |
 | স্কোরিং | ICPC **এবং** IOI (partial) — কনটেস্ট বানানোর সময় বেছে নেবে |
@@ -247,11 +247,27 @@ k6 দিয়ে: প্রত্যেক ভার্চুয়াল ছ�
 - [ ] ১০০০ জনের জন্য API Oracle Free VM-এ (৪ CPU, ফ্রি) বা Render paid — তারপর আবার load test
 - [ ] Judge-এর গতি মাপা (C++ compile ~১.৭ সে. — বড় কনটেস্টে একাধিক worker / precompiled header)
 
-### ফেজ ৫ — ডেমোর পরে
+### ছোট উন্নতি (২০২৬-১০-০৯)
+- [x] Judge-এর অগ্রগতি: "In queue · #3" → "Compiling…" → "Running 8/15 · 53%" বার; সাবমিশন তালিকায় spinner
+- [x] সাবমিশনের পর বাটন: ← প্রবলেম, পরের প্রবলেম, My submissions, Standings
+- [x] এক প্রবলেমের কোড আরেক প্রবলেমে থেকে যাওয়া আর ব্যাক বাটনে crash — ঠিক
+- [x] checker-এর বার্তা (টেস্টের ইনপুট/উত্তর থাকে) শুধু author/Admin দেখেন
+- [x] ল্যাব পিসির জন্য `start-judge.bat` / `remove-judge.bat` (double-click)
+
+### ফেজ ৫ — ডেমোর আগেই শুরু (ক্রম: ভাষা → Virtual/Window → CPU বাঁচানো → বাকিগুলো)
+**৫ক — Python ও Java ✅**
+- [x] Python 3.13 আর Java (OpenJDK 21); judge image ৬৮৯ MB → ১.২ GB
+- [x] ধীর ভাষায় বেশি সময়: Java ×২, Python ×৩ (`LANGUAGE_INFO`-তে বদলানো যায়); প্রবলেম পেজে দেখায়
+- [x] Java: যেকোনো class নাম (public class, নইলে main()-ওয়ালা class); heap ভরলে OutOfMemoryError → MLE;
+      ৬৪ MB stack (গভীর DFS চলে); JVM-এর নিজের জন্য +১২৮ MB
+- [x] Python: syntax error → CE; MemoryError → MLE; RE-তে exception-এর নাম author দেখেন
+- [x] কনটেস্টে কোন ভাষা চলবে author ঠিক করেন (নতুন কনটেস্টে ডিফল্ট C/C++); শেষ হলে upsolve-এ সব ভাষা
+- [x] পুরোনো worker (আপডেট না করা ল্যাব পিসি) শুধু C/C++ পায় — Java/Python নতুন worker-এর জন্য অপেক্ষা করে
+- [x] কোড মিল (plagiarism): ভাষা অনুযায়ী আলাদা তুলনা; Python-এর `#` কমেন্ট, `//` ভাগ, docstring চেনে
+- [x] Self-test: ৩১/৩১ (চার ভাষায় সব verdict)
 - [ ] Virtual participation, Window contest
 - [ ] Rating সিস্টেম
 - [ ] Team contest
-- [ ] আরও ভাষা (Python, Java)
 - [ ] অন্য OJ-এর প্রবলেম (প্রথমে Codeforces API দিয়ে verdict ট্র্যাকিং)
 - [ ] Load test (১০০০ ভার্চুয়াল ইউজার দিয়ে k6)
 

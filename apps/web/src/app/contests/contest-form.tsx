@@ -4,10 +4,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   CONTEST_LIMITS,
+  DEFAULT_CONTEST_LANGUAGES,
+  LANGUAGE_INFO,
+  LANGUAGES,
   SLUG_PATTERN,
   problemLabel,
   type AuthorProblemSummary,
   type ContestInput,
+  type Language,
   type ScoringType,
 } from "@vibejudge/shared";
 import { api } from "@/lib/api";
@@ -46,6 +50,7 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
   const [penalty, setPenalty] = useState("20");
   const [freeze, setFreeze] = useState("0");
   const [isPublic, setIsPublic] = useState(true);
+  const [languages, setLanguages] = useState<Language[]>(DEFAULT_CONTEST_LANGUAGES);
   const [hadPassword, setHadPassword] = useState(false);
   const [changePassword, setChangePassword] = useState(!editSlug);
   const [password, setPassword] = useState("");
@@ -83,6 +88,7 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
       setPenalty(String(c.penaltyMinutes));
       setFreeze(String(c.freezeMinutes));
       setIsPublic(c.isPublic);
+      if (c.languages) setLanguages(c.languages);
       setHadPassword(c.hasPassword);
       setProblems(c.problemSlugs);
       setLoaded(true);
@@ -105,6 +111,7 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
     e.preventDefault();
     setError(null);
     if (problems.length === 0) return setError("Add at least one problem");
+    if (languages.length === 0) return setError("Allow at least one language");
     const durationMinutes = Number(hours) * 60 + Number(minutes);
     const body: ContestInput = {
       slug,
@@ -116,6 +123,7 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
       penaltyMinutes: Number(penalty),
       freezeMinutes: Number(freeze),
       isPublic,
+      languages,
       problemSlugs: problems,
       ...(changePassword ? { password } : {}),
     };
@@ -207,6 +215,28 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
           <input className={inputClass} type="number" min={0} value={freeze} onChange={(e) => setFreeze(e.target.value)} required />
         </Field>
       </div>
+
+      <fieldset className="flex flex-col gap-2 text-sm">
+        <legend className="mb-1.5 font-medium">Languages</legend>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {LANGUAGES.map((l) => (
+            <label key={l} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={languages.includes(l)}
+                onChange={(e) =>
+                  setLanguages((ls) => LANGUAGES.filter((x) => (x === l ? e.target.checked : ls.includes(x))))
+                }
+              />
+              {LANGUAGE_INFO[l].name}
+              {LANGUAGE_INFO[l].timeFactor !== 1 && (
+                <span className="text-zinc-500">· {LANGUAGE_INFO[l].timeFactor}× time</span>
+              )}
+            </label>
+          ))}
+        </div>
+        <p className="text-zinc-500">After the contest ends, practice (upsolve) is open in every language.</p>
+      </fieldset>
 
       <fieldset className="flex flex-col gap-2 text-sm">
         <legend className="mb-1.5 font-medium">Who can join</legend>

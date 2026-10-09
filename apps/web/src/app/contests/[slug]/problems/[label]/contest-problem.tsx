@@ -56,9 +56,15 @@ export function ContestProblem({ slug, label }: { slug: string; label: string })
       {!problem && !error && <p className="text-zinc-500">Loading…</p>}
       {problem && (
         <>
-          <ProblemBody problem={problem} titlePrefix={problem.label} />
+          {/* শেষ হলে (upsolve) সব ভাষা; তার আগে author-এর বাছাই করা */}
+          <ProblemBody
+            problem={problem}
+            titlePrefix={problem.label}
+            languages={phase === "ENDED" ? undefined : contest.languages}
+          />
           <SubmitForm
             draftId={`${contest.slug}/${problem.label}`}
+            languages={phase === "ENDED" ? undefined : contest.languages}
             loginNext={`/contests/${contest.slug}/problems/${problem.label}`}
             note={
               phase === "ENDED" ? (

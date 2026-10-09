@@ -5,7 +5,7 @@
 ```
 apps/web      → Next.js ওয়েবসাইট (Vercel)
 apps/api      → Fastify API + Prisma (Render)
-apps/judge    → Judge worker: isolate sandbox-এ C/C++ চালায় (Docker)
+apps/judge    → Judge worker: isolate sandbox-এ C, C++, Java, Python চালায় (Docker)
 packages/shared → web, api, judge-এর কমন টাইপ (verdict, language, role)
 ```
 

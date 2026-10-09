@@ -14,7 +14,7 @@ import { inputClass } from "./ui";
 
 type MonacoEditor = ReturnType<Monaco["editor"]["create"]>;
 
-const MONACO_LANG: Record<Language, string> = { c: "c", cpp: "cpp" };
+const MONACO_LANG: Record<Language, string> = { c: "c", cpp: "cpp", java: "java", python: "python" };
 const LOAD_TIMEOUT_MS = 8000;
 
 function usePrefersDark(): boolean {

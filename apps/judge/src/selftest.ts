@@ -4,7 +4,7 @@
 // fixtures/<problem>/problem.json   { "timeLimitMs": 1000, "memoryLimitKb": 262144 }
 // fixtures/<problem>/tests/*.in, *.ans
 // fixtures/<problem>/checker.cpp     (ঐচ্ছিক, testlib checker)
-// fixtures/<problem>/solutions/<verdict>-*.{c,cpp}
+// fixtures/<problem>/solutions/<verdict>-*.{c,cpp,java,py}
 
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import type { Language } from "@vibejudge/shared";
 import { compileChecker, judge, type ProblemSpec } from "./judge.js";
 
-const EXT: Record<string, Language> = { ".c": "c", ".cpp": "cpp" };
+const EXT: Record<string, Language> = { ".c": "c", ".cpp": "cpp", ".java": "java", ".py": "python" };
 
 async function loadProblem(dir: string, name: string): Promise<ProblemSpec> {
   const config = JSON.parse(await readFile(join(dir, "problem.json"), "utf8")) as {

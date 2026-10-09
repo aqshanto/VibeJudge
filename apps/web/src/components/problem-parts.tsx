@@ -5,16 +5,41 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { LANGUAGES, MAX_SOURCE_BYTES, type Language, type ProblemView } from "@vibejudge/shared";
+import {
+  LANGUAGE_INFO,
+  LANGUAGES,
+  MAX_SOURCE_BYTES,
+  timeLimitFor,
+  type Language,
+  type ProblemView,
+} from "@vibejudge/shared";
 import { useAuth } from "@/lib/auth";
 import { Markdown } from "./markdown";
 import { CodeEditor } from "./code-editor";
 import { buttonClass } from "./ui";
 
-const LANGUAGE_NAMES: Record<Language, string> = { c: "C (GCC 14, C17)", cpp: "C++ (GCC 14, C++20)" };
+const seconds = (ms: number) => `${ms / 1000} s`;
+
+/** ধীর ভাষার বাড়তি সময়: "Java 2 s, Python 3 s" (শুধু যে ভাষাগুলো চলে) */
+function slowerLanguageLimits(baseMs: number, languages: readonly Language[]): string {
+  return languages
+    .filter((l) => LANGUAGE_INFO[l].timeFactor !== 1)
+    .map((l) => `${LANGUAGE_INFO[l].short} ${seconds(timeLimitFor(baseMs, l))}`)
+    .join(", ");
+}
 
 /** শিরোনাম, লিমিট, স্টেটমেন্ট আর উদাহরণ */
-export function ProblemBody({ problem, titlePrefix }: { problem: ProblemView; titlePrefix?: string }) {
+export function ProblemBody({
+  problem,
+  titlePrefix,
+  languages = LANGUAGES,
+}: {
+  problem: ProblemView;
+  titlePrefix?: string;
+  /** যে ভাষাগুলোতে সাবমিট করা যায় (ধীর ভাষার time limit দেখাতে) */
+  languages?: readonly Language[];
+}) {
+  const slower = slowerLanguageLimits(problem.timeLimitMs, languages);
   return (
     <>
       <header>
@@ -23,7 +48,8 @@ export function ProblemBody({ problem, titlePrefix }: { problem: ProblemView; ti
           {problem.title}
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Time limit: {problem.timeLimitMs / 1000} s · Memory limit: {problem.memoryLimitKb / 1024} MB
+          Time limit: {seconds(problem.timeLimitMs)}
+          {slower && ` (${slower})`} · Memory limit: {problem.memoryLimitKb / 1024} MB
         </p>
       </header>
 
@@ -55,6 +81,11 @@ function Sample({ label, text }: { label: string; text: string }) {
   );
 }
 
+const LANGUAGE_HINTS: Partial<Record<Language, string>> = {
+  java: "Java: any class name works — we run your public class (or the class with main). Don't use a package line.",
+  python: "Python 3: read input with input() or sys.stdin. For deep recursion, call sys.setrecursionlimit().",
+};
+
 // লেখা কোড আর বেছে নেওয়া ভাষা এই ব্রাউজারে মনে রাখি (রিফ্রেশ করলে যেন হারিয়ে না যায়)
 const draftKey = (id: string, lang: Language) => `vj:draft:${id}:${lang}`;
 const LANG_KEY = "vj:lang";
@@ -82,11 +113,14 @@ export function SubmitForm({
   loginNext,
   onSubmit,
   note,
+  languages = LANGUAGES,
 }: {
   draftId: string;
   loginNext: string;
   onSubmit: (language: Language, source: string) => Promise<string>;
   note?: React.ReactNode;
+  /** কনটেস্টে author-এর বাছাই করা ভাষা; ডিফল্ট সব */
+  languages?: readonly Language[];
 }) {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -96,13 +130,15 @@ export function SubmitForm({
   const [error, setError] = useState<string | null>(null);
   const tooLarge = new Blob([source]).size > MAX_SOURCE_BYTES;
 
-  // প্রথমবার: আগের ভাষা আর সেই ভাষার draft ফিরিয়ে আনি
+  // প্রথমবার: আগের ভাষা আর সেই ভাষার draft ফিরিয়ে আনি (এখানে না চললে C++ বা প্রথম চলা ভাষা)
+  const allowedKey = languages.join(",");
   useEffect(() => {
-    const saved = readStorage(LANG_KEY);
-    const lang = (LANGUAGES as readonly string[]).includes(saved ?? "") ? (saved as Language) : "cpp";
+    const allowed = allowedKey.split(",") as Language[];
+    const saved = readStorage(LANG_KEY) as Language | null;
+    const lang = saved && allowed.includes(saved) ? saved : allowed.includes("cpp") ? "cpp" : allowed[0]!;
     setLanguage(lang);
     setSource(readStorage(draftKey(draftId, lang)) ?? "");
-  }, [draftId]);
+  }, [draftId, allowedKey]);
 
   function changeLanguage(lang: Language) {
     setLanguage(lang);
@@ -151,14 +187,15 @@ export function SubmitForm({
           onChange={(e) => changeLanguage(e.target.value as Language)}
           className="rounded-md border border-black/15 bg-transparent px-2 py-1 text-sm dark:border-white/20"
         >
-          {LANGUAGES.map((l) => (
+          {languages.map((l) => (
             <option key={l} value={l}>
-              {LANGUAGE_NAMES[l]}
+              {LANGUAGE_INFO[l].name}
             </option>
           ))}
         </select>
       </div>
       {note}
+      {LANGUAGE_HINTS[language] && <p className="text-sm text-zinc-500">{LANGUAGE_HINTS[language]}</p>}
       <CodeEditor value={source} onChange={changeSource} language={language} modelId={draftId} />
       {tooLarge && <p className="text-sm text-red-600">Code is larger than {MAX_SOURCE_BYTES / 1024} KB.</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}

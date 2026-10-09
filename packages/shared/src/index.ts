@@ -28,8 +28,26 @@ export const VERDICT_LABELS: Record<Verdict, string> = {
   IE: "Internal Error",
 };
 
-export const LANGUAGES = ["c", "cpp"] as const;
+export const LANGUAGES = ["c", "cpp", "java", "python"] as const;
 export type Language = (typeof LANGUAGES)[number];
+
+export const LANGUAGE_INFO: Record<Language, { name: string; short: string; timeFactor: number }> = {
+  c: { name: "C (GCC 14, C17)", short: "C", timeFactor: 1 },
+  cpp: { name: "C++ (GCC 14, C++20)", short: "C++", timeFactor: 1 },
+  // ধীর ভাষায় বেশি সময় (অনেক OJ-এর নিয়ম); বদলাতে চাইলে শুধু এখানে
+  java: { name: "Java (OpenJDK 21)", short: "Java", timeFactor: 2 },
+  python: { name: "Python 3 (3.13)", short: "Python", timeFactor: 3 },
+};
+
+/** এই ভাষায় আসল time limit (প্রবলেমের limit × ভাষার গুণক) */
+export function timeLimitFor(baseMs: number, language: Language): number {
+  return Math.round(baseMs * LANGUAGE_INFO[language].timeFactor);
+}
+
+/** নতুন কনটেস্টে ডিফল্ট ভাষা; বাকিগুলো author চালু করেন */
+export const DEFAULT_CONTEST_LANGUAGES: Language[] = ["c", "cpp"];
+/** পুরোনো worker (যে ভাষার তালিকা পাঠায় না) শুধু এগুলো পারে */
+export const LEGACY_WORKER_LANGUAGES: Language[] = ["c", "cpp"];
 
 export const ROLES = ["USER", "AUTHOR", "ADMIN"] as const;
 export type Role = (typeof ROLES)[number];
@@ -299,6 +317,8 @@ export interface ContestDetail extends ContestSummary {
   penaltyMinutes: number;
   freezeMinutes: number;
   hasPassword: boolean;
+  /** এই কনটেস্টে যে ভাষাগুলোতে সাবমিট করা যায় */
+  languages: Language[];
   /** সার্ভারের বর্তমান সময় — ব্রাউজারের ঘড়ি ভুল থাকলেও countdown ঠিক থাকে */
   serverTime: string;
   /** দেখার অনুমতি না থাকলে খালি (যেমন শুরুর আগে) */
@@ -323,6 +343,8 @@ export interface ContestInput {
   isPublic: boolean;
   /** undefined = বদলাবে না, "" = পাসওয়ার্ড তুলে দাও */
   password?: string;
+  /** undefined = নতুন কনটেস্টে C/C++, এডিটে বদলাবে না */
+  languages?: Language[];
   /** প্রবলেমের slug, ক্রমানুসারে (A, B, C …) */
   problemSlugs: string[];
 }

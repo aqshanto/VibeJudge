@@ -1,6 +1,7 @@
 // API-র সাথে কথা বলার client (শুধু /api/judge/* endpoint)
 
 import type { JudgeJob, JudgeProgressReport, JudgeReport, ProblemData } from "@vibejudge/shared";
+import { LANGUAGES } from "./languages.js";
 
 export class JudgeApi {
   constructor(
@@ -27,7 +28,8 @@ export class JudgeApi {
   async claim(): Promise<JudgeJob | null> {
     const res = await this.request("/claim?wait=25000", {
       method: "POST",
-      body: JSON.stringify({ worker: this.workerName }),
+      // কোন ভাষা পারি — API শুধু সেই ভাষার সাবমিশন দেয় (পুরোনো worker তালিকা পাঠায় না → শুধু C/C++)
+      body: JSON.stringify({ worker: this.workerName, languages: Object.keys(LANGUAGES) }),
       signal: AbortSignal.timeout(60_000),
     });
     return res.status === 204 ? null : ((await res.json()) as JudgeJob);

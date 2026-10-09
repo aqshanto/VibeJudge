@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { SubmissionPage, SubmissionRow } from "@vibejudge/shared";
+import { LANGUAGE_INFO, type SubmissionPage, type SubmissionRow } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { VerdictBadge } from "@/app/verdict-badge";
 import { secondaryButtonClass } from "./ui";
@@ -117,7 +117,7 @@ export function SubmissionTable({
                     {s.contest && !s.contest.inContest && <span className="ml-1.5 text-xs text-zinc-500">(practice)</span>}
                   </td>
                 )}
-                <td className="px-3 py-2 uppercase">{s.language}</td>
+                <td className="whitespace-nowrap px-3 py-2">{LANGUAGE_INFO[s.language].short}</td>
                 <td className="px-3 py-2">
                   <Link href={`/submissions/${s.id}`}>
                     <VerdictBadge verdict={s.verdict} progress={s.progress} />

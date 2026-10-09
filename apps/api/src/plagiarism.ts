@@ -8,19 +8,41 @@
 //
 // এটা "সন্দেহের তালিকা", প্রমাণ না — ছোট/সহজ প্রবলেমে অনেকের কোড স্বাভাবিকভাবেই এক রকম হয়।
 
+import type { Language } from "@vibejudge/shared";
+
 const K = 12; // k-gram দৈর্ঘ্য (token)
 const W = 6; // winnowing জানালা
 /** এর চেয়ে কম fingerprint থাকলে (খুব ছোট কোড) তুলনা করি না — ভুল সন্দেহ হয় */
 export const MIN_FINGERPRINTS = 8;
 
-const KEYWORDS = new Set(
-  (
-    "auto break case char const continue default do double else enum extern float for goto if int long register " +
+const words = (s: string) => new Set(s.split(" "));
+const C_KEYWORDS = words(
+  "auto break case char const continue default do double else enum extern float for goto if int long register " +
     "return short signed sizeof static struct switch typedef union unsigned void volatile while bool true false " +
     "class new delete this template typename namespace using public private protected virtual operator " +
-    "try catch throw nullptr constexpr inline friend"
-  ).split(" "),
+    "try catch throw nullptr constexpr inline friend",
 );
+const KEYWORDS: Record<Language, Set<string>> = {
+  c: C_KEYWORDS,
+  cpp: C_KEYWORDS,
+  java: words(
+    "abstract boolean break byte case catch char class continue default do double else enum extends final finally " +
+      "float for if implements instanceof int interface long new private protected public return short static super " +
+      "switch this throw throws try void while var true false null record",
+  ),
+  python: words(
+    "False None True and as assert async await break class continue def del elif else except finally for from " +
+      "global if in is lambda nonlocal not or pass raise return try while with yield",
+  ),
+};
+
+/** লাইনের শুরুতে থাকলে পুরো লাইন বাদ (include/import — সবার কোডে প্রায় একই) */
+const SKIP_LINE: Record<Language, RegExp> = {
+  c: /^#/,
+  cpp: /^#/,
+  java: /^(import|package)\s/,
+  python: /^(import\s|from\s+[\w.]+\s+import\s)/,
+};
 
 // লম্বা operator আগে (">>=" যেন ">>" আর "=" হয়ে না যায়)
 const OPERATORS = [
@@ -33,8 +55,10 @@ export interface Token {
   line: number;
 }
 
-export function tokenize(source: string): Token[] {
+export function tokenize(source: string, language: Language = "cpp"): Token[] {
   const tokens: Token[] = [];
+  const python = language === "python";
+  const keywords = KEYWORDS[language];
   const s = source.replace(/\r\n?/g, "\n");
   let line = 1;
   let i = 0;
@@ -53,7 +77,8 @@ export function tokenize(source: string): Token[] {
       continue;
     }
     // #include, #define … পুরো লাইন বাদ (লাইনের শেষে "\" থাকলে পরের লাইনও)
-    if (c === "#" && lineStart) {
+    // (import-ও একইভাবে; Python-এ "#" যেকোনো জায়গায় = কমেন্ট)
+    if ((lineStart && SKIP_LINE[language].test(s.slice(i, i + 80))) || (python && c === "#")) {
       while (i < s.length && s[i] !== "\n") {
         if (s[i] === "\\" && s[i + 1] === "\n") {
           line++;
@@ -65,11 +90,12 @@ export function tokenize(source: string): Token[] {
     }
     lineStart = false;
 
-    if (c === "/" && s[i + 1] === "/") {
+    // Python-এ "//" হলো ভাগ (floor division), কমেন্ট না
+    if (!python && c === "/" && s[i + 1] === "/") {
       while (i < s.length && s[i] !== "\n") i++;
       continue;
     }
-    if (c === "/" && s[i + 1] === "*") {
+    if (!python && c === "/" && s[i + 1] === "*") {
       i += 2;
       while (i < s.length && !(s[i] === "*" && s[i + 1] === "/")) {
         if (s[i] === "\n") line++;
@@ -78,12 +104,26 @@ export function tokenize(source: string): Token[] {
       i += 2;
       continue;
     }
+    // Python-এর """docstring""" বা '''…''' (কয়েক লাইন জুড়ে)
+    const triple = s.slice(i, i + 3);
+    if (python && (triple === '"""' || triple === "'''")) {
+      const startLine = line;
+      i += 3;
+      while (i < s.length && !s.startsWith(triple, i)) {
+        if (s[i] === "\n") line++;
+        i += s[i] === "\\" ? 2 : 1;
+      }
+      i += 3;
+      tokens.push({ text: "S", line: startLine });
+      continue;
+    }
     if (c === '"' || c === "'") {
       const startLine = line;
       i++;
       while (i < s.length && s[i] !== c && s[i] !== "\n") i += s[i] === "\\" ? 2 : 1;
       i++;
-      tokens.push({ text: c === '"' ? "S" : "C", line: startLine });
+      // Python-এ ' আর " দুটোই স্ট্রিং
+      tokens.push({ text: c === '"' || python ? "S" : "C", line: startLine });
       continue;
     }
     if (/[0-9]/.test(c) || (c === "." && /[0-9]/.test(s[i + 1] ?? ""))) {
@@ -99,7 +139,7 @@ export function tokenize(source: string): Token[] {
       let j = i;
       while (j < s.length && /[A-Za-z0-9_]/.test(s[j]!)) j++;
       const word = s.slice(i, j);
-      tokens.push({ text: KEYWORDS.has(word) ? word : "V", line });
+      tokens.push({ text: keywords.has(word) ? word : "V", line });
       i = j;
       continue;
     }
@@ -159,6 +199,7 @@ export interface PlagiarismInput {
   id: string; // সাবমিশন id
   owner: string; // username
   source: string;
+  language: Language;
 }
 
 export interface SimilarPair {
@@ -177,10 +218,24 @@ export function findSimilarPairs(
   subs: PlagiarismInput[],
   opts: { minSimilarity?: number; boilerplateShare?: number; maxPairs?: number } = {},
 ): { pairs: SimilarPair[]; ignoredFingerprints: number } {
+  // ভাষা অনুযায়ী আলাদা তুলনা — C++ আর Python-এর token মেলে না, আর boilerplate-ও আলাদা
+  const byLanguage = new Map<Language, PlagiarismInput[]>();
+  for (const s of subs) byLanguage.set(s.language, [...(byLanguage.get(s.language) ?? []), s]);
+  if (byLanguage.size > 1) {
+    const results = [...byLanguage.values()].map((group) => findSimilarPairs(group, { ...opts, maxPairs: Infinity }));
+    const pairs = results
+      .flatMap((r) => r.pairs)
+      .sort((p, q) => q.similarity - p.similarity || q.shared - p.shared);
+    return {
+      pairs: pairs.slice(0, opts.maxPairs ?? 300),
+      ignoredFingerprints: results.reduce((n, r) => n + r.ignoredFingerprints, 0),
+    };
+  }
+
   const minSimilarity = opts.minSimilarity ?? 50;
   const boilerplate = Math.max(3, Math.ceil(subs.length * (opts.boilerplateShare ?? 0.3)));
 
-  const prints = subs.map((s) => new Set(fingerprint(tokenize(s.source)).byHash.keys()));
+  const prints = subs.map((s) => new Set(fingerprint(tokenize(s.source, s.language)).byHash.keys()));
   // hash → কোন কোন সাবমিশনে আছে
   const index = new Map<number, number[]>();
   prints.forEach((set, i) => {
@@ -224,9 +279,12 @@ export function findSimilarPairs(
 }
 
 /** দুটো কোডের কোন লাইনগুলো মিলেছে (পাশাপাশি দেখানোর সময় হাইলাইটের জন্য) */
-export function matchedLines(sourceA: string, sourceB: string): { a: number[]; b: number[]; similarity: number } {
-  const fa = fingerprint(tokenize(sourceA)).byHash;
-  const fb = fingerprint(tokenize(sourceB)).byHash;
+export function matchedLines(
+  a: { source: string; language: Language },
+  b: { source: string; language: Language },
+): { a: number[]; b: number[]; similarity: number } {
+  const fa = fingerprint(tokenize(a.source, a.language)).byHash;
+  const fb = fingerprint(tokenize(b.source, b.language)).byHash;
   const linesA = new Set<number>();
   const linesB = new Set<number>();
   let common = 0;

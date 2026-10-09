@@ -88,6 +88,8 @@ enum Visibility {
 enum Language {
   c
   cpp
+  java
+  python
 }
 
 enum Verdict {
@@ -203,6 +205,8 @@ model Contest {
   /// false হলে কনটেস্টের তালিকায় দেখায় না, আর রেজিস্টার করতে পাসওয়ার্ড লাগে
   isPublic        Boolean     @default(true)
   passwordHash    String?
+  /// কোন ভাষায় সাবমিট করা যাবে (নতুন কনটেস্টে C/C++; author বাকিগুলো চালু করেন)
+  languages       Language[]  @default([c, cpp])
   authorId        String?
   author          User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
   createdAt       DateTime    @default(now())

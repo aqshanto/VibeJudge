@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   CONTEST_LIMITS,
   LANGUAGES,
+  LANGUAGE_INFO,
   MAX_SOURCE_BYTES,
   SLUG_PATTERN,
   problemLabel,
@@ -62,6 +63,8 @@ const CONTEST_BODY = {
     freezeMinutes: { type: "integer", minimum: 0 },
     isPublic: { type: "boolean" },
     password: { type: "string", maxLength: 100 },
+    // না পাঠালে: নতুন কনটেস্টে C/C++, এডিটে আগেরটাই
+    languages: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", enum: [...LANGUAGES] } },
     problemSlugs: {
       type: "array",
       minItems: 1,
@@ -121,6 +124,7 @@ async function validateInput(
     penaltyMinutes: input.penaltyMinutes,
     freezeMinutes: input.freezeMinutes,
     isPublic: input.isPublic,
+    ...(input.languages ? { languages: LANGUAGES.filter((l) => input.languages!.includes(l)) } : {}),
     ...(input.password === undefined
       ? {}
       : { passwordHash: input.password ? await hashPassword(input.password) : null }),
@@ -147,6 +151,7 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
     penaltyMinutes: contest.penaltyMinutes,
     freezeMinutes: contest.freezeMinutes,
     hasPassword: contest.passwordHash !== null,
+    languages: contest.languages,
     serverTime: new Date().toISOString(),
     problems: access.canSeeProblems
       ? contest.problems.map((cp) => ({ label: cp.label, slug: cp.problem.slug, title: cp.problem.title }))
@@ -297,6 +302,7 @@ export async function contestRoutes(app: FastifyInstance) {
       freezeMinutes: contest.freezeMinutes,
       isPublic: contest.isPublic,
       hasPassword: contest.passwordHash !== null,
+      languages: contest.languages,
       problemSlugs: contest.problems.map((cp) => cp.problem.slug),
     };
   });
@@ -500,6 +506,11 @@ export async function contestRoutes(app: FastifyInstance) {
       }
       const cp = contest.problems.find((p) => p.label === req.body.label.toUpperCase());
       if (!cp) return reply.code(404).send({ error: "Problem not found" });
+      // শেষ হওয়ার পর (upsolve) যেকোনো ভাষা; তার আগে শুধু author-এর বাছাই করা ভাষা
+      if (access.phase !== "ENDED" && !contest.languages.includes(req.body.language)) {
+        const allowed = contest.languages.map((l) => LANGUAGE_INFO[l].short).join(", ");
+        return reply.code(400).send({ error: `This contest only accepts: ${allowed}` });
+      }
 
       const submission = await prisma!.submission.create({
         data: {

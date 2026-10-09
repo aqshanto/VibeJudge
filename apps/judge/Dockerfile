@@ -34,9 +34,14 @@ RUN pnpm --filter @vibejudge/judge... build
 
 # ---------- 4. runtime ----------
 FROM node:22-trixie-slim
-RUN apt-get update \
+# man1 ফোল্ডার না থাকলে slim image-এ openjdk-র ইনস্টল ভেঙে যায়
+RUN mkdir -p /usr/share/man/man1 \
+ && apt-get update \
  && apt-get install -y --no-install-recommends gcc g++ libc6-dev libcap2 libseccomp2 \
- && rm -rf /var/lib/apt/lists/*
+      python3 openjdk-21-jdk-headless \
+ && rm -rf /var/lib/apt/lists/* \
+ # sandbox-এ /etc থাকে না, তাই /usr/bin/java (→ /etc/alternatives) কাজ করে না — /usr-এর ভেতরে স্থির path
+ && ln -s "$(dirname "$(dirname "$(readlink -f /usr/bin/javac)")")" /usr/lib/jvm/vj-java
 
 COPY --from=isolate /src/isolate/isolate /usr/local/bin/isolate
 COPY apps/judge/docker/isolate.cf /usr/local/etc/isolate

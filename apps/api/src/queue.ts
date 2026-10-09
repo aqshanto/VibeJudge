@@ -11,14 +11,16 @@ import { prisma } from "./db.js";
 /** এর বেশি সময় JUDGING থাকলে ধরে নিই worker মরে গেছে — অন্য worker আবার নেবে */
 export const CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
 
-// hint = "DB-তে হয়তো কাজ আছে"। শুরুতে true, যাতে restart-এর আগের PENDING কাজ ধরা পড়ে।
-let hint = true;
+// "DB-তে হয়তো কাজ আছে" — প্রতিটা ভাষার-সেটের জন্য আলাদা (key: "c,cpp,java,python")।
+// শুধু C/C++ পারে এমন পুরোনো worker কিছু না পেলে Java/Python পারা worker যেন ঘুমিয়ে না পড়ে।
+// map-এ না থাকা = true, তাই শুরুতে restart-এর আগের PENDING কাজ ধরা পড়ে।
+const noWork = new Set<string>();
 // প্রতিটা notify-তে বাড়ে — query চলাকালীন নতুন কাজ এলে hint যেন ভুল করে false না হয়
 let epoch = 0;
 const waiters = new Set<() => void>();
 
 export function notifyWork(): void {
-  hint = true;
+  noWork.clear();
   epoch++;
   for (const wake of [...waiters]) wake();
 }
@@ -67,20 +69,26 @@ setInterval(() => {
   for (const [id, entry] of active) if (entry.at < cutoff) active.delete(id);
 }, 60_000).unref();
 
-export async function claimJob(workerName: string, waitMs: number, signal: AbortSignal): Promise<JudgeJob | null> {
+export async function claimJob(
+  workerName: string,
+  languages: Language[],
+  waitMs: number,
+  signal: AbortSignal,
+): Promise<JudgeJob | null> {
   const deadline = Date.now() + waitMs;
+  const key = [...languages].sort().join(",");
   for (;;) {
     if (signal.aborted) return null;
-    if (hint) {
+    if (languages.length > 0 && !noWork.has(key)) {
       const seen = epoch;
-      const job = await tryClaim(workerName);
+      const job = await tryClaim(workerName, languages);
       if (job) {
         // timeout পার হলে আবার খুঁজতে হবে (যদি এই worker রেজাল্ট না পাঠায়)
         setTimeout(notifyWork, CLAIM_TIMEOUT_MS + 1000).unref();
         active.set(job.submissionId, { token: job.claimToken, progress: null, at: Date.now() });
         return job;
       }
-      if (epoch === seen) hint = false;
+      if (epoch === seen) noWork.add(key);
     }
     const left = deadline - Date.now();
     if (left <= 0) return null;
@@ -88,7 +96,7 @@ export async function claimJob(workerName: string, waitMs: number, signal: Abort
   }
 }
 
-async function tryClaim(workerName: string): Promise<JudgeJob | null> {
+async function tryClaim(workerName: string, languages: Language[]): Promise<JudgeJob | null> {
   if (!prisma) throw new Error("Database is not configured");
   const claimToken = randomBytes(18).toString("base64url");
   const timeoutSec = CLAIM_TIMEOUT_MS / 1000;
@@ -100,8 +108,9 @@ async function tryClaim(workerName: string): Promise<JudgeJob | null> {
     SET "verdict" = 'JUDGING', "workerName" = ${workerName}, "claimToken" = ${claimToken}, "claimedAt" = now()
     WHERE "id" = (
       SELECT "id" FROM "submissions"
-      WHERE "verdict" = 'PENDING'
-         OR ("verdict" = 'JUDGING' AND "claimedAt" < now() - make_interval(secs => ${timeoutSec}))
+      WHERE ("verdict" = 'PENDING'
+         OR ("verdict" = 'JUDGING' AND "claimedAt" < now() - make_interval(secs => ${timeoutSec})))
+        AND "language"::text = ANY(${languages}::text[])
       ORDER BY "createdAt"
       LIMIT 1
       FOR UPDATE SKIP LOCKED

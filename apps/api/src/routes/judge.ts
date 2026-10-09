@@ -2,7 +2,14 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { VERDICTS, type JudgeProgressReport, type JudgeReport, type ProblemData } from "@vibejudge/shared";
+import {
+  LANGUAGES,
+  LEGACY_WORKER_LANGUAGES,
+  VERDICTS,
+  type JudgeProgressReport,
+  type JudgeReport,
+  type ProblemData,
+} from "@vibejudge/shared";
 import { prisma } from "../db.js";
 import { env } from "../env.js";
 import { claimJob, clearProgress, setProgress } from "../queue.js";
@@ -24,7 +31,7 @@ export async function judgeRoutes(app: FastifyInstance) {
   });
 
   // কাজ থাকলে 200 + JudgeJob, না থাকলে (wait পর্যন্ত অপেক্ষার পর) 204
-  app.post<{ Querystring: { wait?: number }; Body: { worker: string } }>(
+  app.post<{ Querystring: { wait?: number }; Body: { worker: string; languages?: string[] } }>(
     "/claim",
     {
       schema: {
@@ -32,7 +39,11 @@ export async function judgeRoutes(app: FastifyInstance) {
         body: {
           type: "object",
           required: ["worker"],
-          properties: { worker: { type: "string", minLength: 1, maxLength: 100 } },
+          properties: {
+            worker: { type: "string", minLength: 1, maxLength: 100 },
+            // enum দিই না: ভবিষ্যতের worker অজানা ভাষা পাঠালে 400 না দিয়ে শুধু বাদ দিই
+            languages: { type: "array", maxItems: 50, items: { type: "string", maxLength: 30 } },
+          },
         },
       },
     },
@@ -41,7 +52,11 @@ export async function judgeRoutes(app: FastifyInstance) {
       req.raw.on("close", () => controller.abort());
       const waitMs = Math.min(req.query.wait ?? MAX_WAIT_MS, MAX_WAIT_MS);
 
-      const job = await claimJob(req.body.worker, waitMs, controller.signal);
+      const languages = req.body.languages
+        ? LANGUAGES.filter((l) => req.body.languages!.includes(l))
+        : LEGACY_WORKER_LANGUAGES;
+
+      const job = await claimJob(req.body.worker, languages, waitMs, controller.signal);
       if (!job) return reply.code(204).send();
       req.log.info({ submissionId: job.submissionId, worker: req.body.worker }, "submission claimed");
       return job;
