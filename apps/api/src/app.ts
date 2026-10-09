@@ -1,18 +1,26 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import type { HealthResponse } from "@vibejudge/shared";
 import { prisma } from "./db.js";
 import { env } from "./env.js";
+import { judgeRoutes } from "./routes/judge.js";
+import { publicRoutes } from "./routes/public.js";
 
 export async function buildApp() {
-  const app = Fastify({ logger: true });
+  // Vercel আর Render দুটোই proxy — আসল ইউজারের IP X-Forwarded-For-এ থাকে
+  const app = Fastify({ logger: true, trustProxy: true });
 
   // Web সাধারণত Vercel rewrite দিয়ে একই ডোমেইন থেকে আসবে, তবু সরাসরি কলের জন্য CORS রাখা হলো।
   await app.register(cors, { origin: env.webOrigins, credentials: true });
+  // শুধু যেসব route-এ config.rateLimit দেওয়া আছে সেগুলোতে
+  await app.register(rateLimit, { global: false });
 
-  app.get("/api/health", async (): Promise<HealthResponse> => {
+  // ?db=1 দিলে DB-ও চেক করে। Render-এর নিয়মিত health check DB ছোঁয় না,
+  // নাহলে Neon কখনো ঘুমাতে পারত না (ফ্রি compute ঘণ্টা শেষ হয়ে যেত)।
+  app.get<{ Querystring: { db?: string } }>("/api/health", async (req): Promise<HealthResponse> => {
     let database: HealthResponse["database"] = "not_configured";
-    if (prisma) {
+    if (prisma && req.query.db === "1") {
       try {
         await prisma.$queryRaw`SELECT 1`;
         database = "connected";
@@ -20,6 +28,8 @@ export async function buildApp() {
         app.log.error(err, "database health check failed");
         database = "error";
       }
+    } else if (prisma) {
+      database = "not_checked";
     }
 
     return {
@@ -30,6 +40,9 @@ export async function buildApp() {
       database,
     };
   });
+
+  await app.register(publicRoutes, { prefix: "/api" });
+  await app.register(judgeRoutes, { prefix: "/api/judge" });
 
   return app;
 }

@@ -1,5 +1,5 @@
 // VibeJudge database schema
-// ফেজ ০: শুধু User — বাকি টেবিল (problems, contests, submissions...) পরের ফেজে যোগ হবে।
+// ফেজ ১খ: User, Problem, TestCase, Submission — কনটেস্টের টেবিল ফেজ ৩-এ যোগ হবে।
 
 generator client {
   provider               = "prisma-client"
@@ -31,5 +31,96 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  problems    Problem[]
+  submissions Submission[]
+
   @@map("users")
+}
+
+enum Visibility {
+  PRIVATE // শুধু author
+  CONTEST // শুধু কনটেস্টের ভেতরে
+  PUBLIC // Problem Archive-এ সবার জন্য
+}
+
+enum Language {
+  c
+  cpp
+}
+
+enum Verdict {
+  PENDING
+  JUDGING
+  AC
+  WA
+  TLE
+  MLE
+  RE
+  CE
+  IE
+}
+
+model Problem {
+  id            String     @id @default(cuid())
+  slug          String     @unique
+  title         String
+  statement     String // Markdown + LaTeX
+  timeLimitMs   Int        @default(1000)
+  memoryLimitKb Int        @default(262144)
+  /// testlib checker-এর C++ সোর্স; null হলে token compare
+  checkerSource String?
+  visibility    Visibility @default(PRIVATE)
+  /// টেস্ট বা checker বদলালে বাড়ে — worker তখন cache ফেলে নতুন ডাটা নামায়
+  dataVersion   Int        @default(1)
+  authorId      String?
+  author        User?      @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  tests       TestCase[]
+  submissions Submission[]
+
+  @@map("problems")
+}
+
+/// ছোট টেস্ট আপাতত DB-তে থাকে; ফেজ ২-এ বড় টেস্টের জন্য Cloudflare R2-তে সরবে।
+/// Worker সবসময় API দিয়ে নামায়, তাই স্টোরেজ বদলালেও worker বদলাতে হবে না।
+model TestCase {
+  id        String  @id @default(cuid())
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  ordinal   Int
+  input     Bytes
+  answer    Bytes
+  isSample  Boolean @default(false)
+
+  @@unique([problemId, ordinal])
+  @@map("test_cases")
+}
+
+model Submission {
+  id            String    @id @default(cuid())
+  problemId     String
+  problem       Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  userId        String? // ফেজ ২-এ লগইন বাধ্যতামূলক হবে
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  language      Language
+  source        String
+  verdict       Verdict   @default(PENDING)
+  timeMs        Int?
+  memoryKb      Int?
+  compileOutput String?
+  /// প্রতিটা টেস্টের ফলাফল: [{ name, verdict, timeMs, memoryKb, message }]
+  testResults   Json?
+  /// কোন worker নিয়েছে, আর claim-এর গোপন টোকেন (অন্য কেউ রেজাল্ট লিখতে পারবে না)
+  workerName    String?
+  claimToken    String?
+  claimedAt     DateTime?
+  judgedAt      DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([verdict, createdAt])
+  @@index([problemId, createdAt])
+  @@index([userId, createdAt])
+  @@map("submissions")
 }

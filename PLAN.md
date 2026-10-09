@@ -135,11 +135,14 @@ VibeJudge/
 - [x] testlib checker সাপোর্ট (special judge)
 - [x] Self-test: `pnpm judge:build && pnpm judge:selftest` (১২টা সমাধান, সব verdict)
 
-**১খ — API-র সাথে যুক্ত করা**
-- [ ] DB-তে Problem/TestCase/Submission টেবিল
-- [ ] API থেকে কাজ টানা (pull) আর রেজাল্ট পাঠানো (worker token দিয়ে)
-- [ ] একসাথে একাধিক সাবমিশন (CPU অনুযায়ী parallel box)
-- [ ] টেস্ট ডাটা ডাউনলোড + cache
+**১খ — API-র সাথে যুক্ত করা ✅**
+- [x] DB-তে Problem/TestCase/Submission টেবিল (টেস্ট আপাতত DB-তে, ফেজ ২-এ R2)
+- [x] Postgres `SKIP LOCKED` কিউ + long-poll (idle-এ DB ছোঁয় না → Neon ঘুমাতে পারে)
+- [x] Worker: claim → টেস্ট cache → judge → রেজাল্ট (JUDGE_TOKEN দিয়ে), crash হলে ১০ মিনিট পর আবার কিউতে
+- [x] একসাথে একাধিক সাবমিশন (CONCURRENCY slot, প্রতিটার আলাদা box)
+- [x] Web: Problems তালিকা, প্রবলেম পেজ + সাবমিট, লাইভ verdict পেজ (প্রতি টেস্টের ফলাফল)
+- [x] Seed (`db:seed`) + end-to-end টেস্ট (`pnpm judge:e2e`, ১২/১২ পাস)
+- [x] সাবমিশনে IP প্রতি মিনিটে ১০টার সীমা (লগইন আসার আগ পর্যন্ত)
 
 **পরে উন্নতি**
 - [ ] `bits/stdc++.h` precompiled header — এখন C++ compile-এ ~১.৭ সেকেন্ড লাগে (C-তে ~০.১)

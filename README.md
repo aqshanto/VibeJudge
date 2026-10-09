@@ -22,6 +22,29 @@ pnpm judge:selftest
 `apps/judge/fixtures/`-এর প্রতিটা সমাধান judge করে, ফাইলের নামের verdict-এর সাথে মেলায়
 (যেমন `tle-loop.cpp` → TLE)। নতুন টেস্ট যোগ করতে ওখানে ফাইল রাখলেই হবে।
 
+### Worker চালানো
+
+```bash
+cp apps/judge/.env.example apps/judge/.env
+```
+
+`apps/judge/.env`-এ `API_URL` আর `JUDGE_TOKEN` বসাও (API-র `JUDGE_TOKEN`-এর সাথে হুবহু এক)।
+লোকাল API হলে `API_URL=http://host.docker.internal:4000`, লাইভ হলে Render-এর URL।
+
+```bash
+pnpm judge:worker
+```
+
+পুরো সিস্টেম পরীক্ষা (API + worker চালু থাকতে হবে, প্রবলেম seed করা থাকতে হবে):
+
+```bash
+pnpm --filter @vibejudge/api db:seed
+```
+
+```bash
+pnpm judge:e2e
+```
+
 > কনটেইনার `--privileged` লাগে, কারণ isolate নিজে cgroup আর namespace বানায়।
 > ইউজারের কোড তবুও isolate-এর sandbox-এ চলে: আলাদা user, নেটওয়ার্ক নেই, time/memory সীমিত।
 

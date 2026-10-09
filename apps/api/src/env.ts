@@ -10,4 +10,6 @@ export const env = {
     .map((s) => s.trim())
     .filter(Boolean),
   version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? "dev",
+  // Judge worker-দের গোপন টোকেন; খালি থাকলে /api/judge/* বন্ধ থাকে
+  judgeToken: process.env.JUDGE_TOKEN || undefined,
 };

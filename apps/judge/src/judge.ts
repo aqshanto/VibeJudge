@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Language, Verdict } from "@vibejudge/shared";
+import type { FinalVerdict, Language, TestResult } from "@vibejudge/shared";
 import { Box, type RunResult } from "./isolate.js";
 import { CHECKER_COMPILE, LANGUAGES } from "./languages.js";
 import { compareTokens } from "./compare.js";
@@ -25,16 +25,6 @@ export interface ProblemSpec {
 export interface Submission {
   language: Language;
   source: string;
-}
-
-export type FinalVerdict = Exclude<Verdict, "PENDING" | "JUDGING">;
-
-export interface TestResult {
-  name: string;
-  verdict: FinalVerdict;
-  timeMs: number;
-  memoryKb: number;
-  message?: string;
 }
 
 export interface JudgeResult {

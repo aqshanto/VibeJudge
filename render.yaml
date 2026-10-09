@@ -21,3 +21,5 @@ services:
         sync: false # তৈরি করার সময় Render জিজ্ঞেস করবে — Neon-এর connection string দিও
       - key: WEB_ORIGIN
         sync: false # যেমন: https://vibejudge.vercel.app
+      - key: JUDGE_TOKEN
+        generateValue: true # Render নিজে একটা random টোকেন বানাবে — judge worker-এর .env-এ এটাই দিতে হবে

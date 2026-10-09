@@ -1,0 +1,2 @@
+# Repo-তে সব text ফাইল LF থাকবে (shell script আর টেস্ট ফাইল Linux-এ চলে)
+* text=auto eol=lf

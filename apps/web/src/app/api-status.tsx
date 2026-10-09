@@ -10,6 +10,7 @@ type State =
 
 const DB_LABELS: Record<HealthResponse["database"], string> = {
   connected: "Connected",
+  not_checked: "Not checked",
   not_configured: "Not configured",
   error: "Error",
 };
@@ -22,7 +23,7 @@ export function ApiStatus() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 70_000);
 
-    fetch("/api/health", { signal: controller.signal, cache: "no-store" })
+    fetch("/api/health?db=1", { signal: controller.signal, cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         setState({ kind: "ok", health: (await res.json()) as HealthResponse });
