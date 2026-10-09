@@ -83,9 +83,12 @@ export default function ContestsPage() {
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">{formatDateTime(c.startsAt)}</td>
-                  <td className="whitespace-nowrap px-4 py-2">{formatDuration(c.durationMinutes)}</td>
+                  <td className="whitespace-nowrap px-4 py-2">
+                    {formatDuration(c.durationMinutes)}
+                    {c.type === "WINDOW" && <span className="text-zinc-500"> · window</span>}
+                  </td>
                   <td className="px-4 py-2">
-                    <PhaseBadge phase={contestPhase(c.startsAt, c.durationMinutes)} />
+                    <PhaseBadge phase={contestPhase(c.startsAt, c.endsAt)} />
                   </td>
                   <td className="px-4 py-2">{c.participantCount}</td>
                 </tr>

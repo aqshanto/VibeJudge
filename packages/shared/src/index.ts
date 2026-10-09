@@ -286,22 +286,65 @@ export const CONTEST_LIMITS = {
 /** label: "A".."Z" */
 export const problemLabel = (index: number) => String.fromCharCode(65 + index);
 
-export function contestPhase(startsAt: string | Date, durationMinutes: number, now = Date.now()): ContestPhase {
-  const start = new Date(startsAt).getTime();
-  if (now < start) return "UPCOMING";
-  if (now < start + durationMinutes * 60_000) return "RUNNING";
+/**
+ * FIXED: সবাই একসাথে startsAt থেকে durationMinutes।
+ * WINDOW: startsAt…endsAt জানালার মধ্যে প্রত্যেকে নিজের সময়ে "Start" চাপে, পায় durationMinutes
+ * (জানালা বন্ধ হওয়ার পরে আর না)।
+ */
+export const CONTEST_TYPES = ["FIXED", "WINDOW"] as const;
+export type ContestType = (typeof CONTEST_TYPES)[number];
+
+/** পুরো কনটেস্টের phase (WINDOW-এ: জানালা খোলার আগে / খোলা / বন্ধ) */
+export function contestPhase(startsAt: string | Date, endsAt: string | Date, now = Date.now()): ContestPhase {
+  if (now < new Date(startsAt).getTime()) return "UPCOMING";
+  if (now < new Date(endsAt).getTime()) return "RUNNING";
   return "ENDED";
+}
+
+/** একজন প্রতিযোগীর নিজের ঘড়ি (WINDOW বা virtual-এ প্রত্যেকের আলাদা) */
+export type PersonalState = "NOT_STARTED" | "RUNNING" | "FINISHED";
+
+export interface Participation {
+  /** কনটেস্ট শেষ হওয়ার পরে নিজে নিজে দেওয়া */
+  virtual: boolean;
+  /** WINDOW/virtual-এ "Start" চাপার সময়; FIXED-এ null */
+  startedAt: string | Date | null;
+}
+
+/** প্রতিযোগীর নিজের শুরু-শেষ (ms); WINDOW/virtual-এ Start না চাপলে null */
+export function personalWindow(
+  contest: { type: ContestType; startsAt: string | Date; endsAt: string | Date; durationMinutes: number },
+  p: Participation,
+): { start: number; end: number } | null {
+  if (!p.virtual && contest.type === "FIXED") {
+    return { start: new Date(contest.startsAt).getTime(), end: new Date(contest.endsAt).getTime() };
+  }
+  if (!p.startedAt) return null;
+  const start = new Date(p.startedAt).getTime();
+  const full = start + contest.durationMinutes * 60_000;
+  // দেরিতে শুরু করলে জানালা বন্ধ হওয়ার সাথে সাথেই শেষ
+  return { start, end: p.virtual ? full : Math.min(full, new Date(contest.endsAt).getTime()) };
+}
+
+export function personalState(win: { start: number; end: number } | null, now = Date.now()): PersonalState {
+  if (!win || now < win.start) return "NOT_STARTED";
+  return now < win.end ? "RUNNING" : "FINISHED";
 }
 
 export interface ContestSummary {
   id: string;
   slug: string;
   title: string;
+  type: ContestType;
   startsAt: string;
+  /** FIXED: startsAt + durationMinutes; WINDOW: জানালা বন্ধের সময় */
+  endsAt: string;
+  /** WINDOW-এ: প্রত্যেক প্রতিযোগী কত মিনিট পায় */
   durationMinutes: number;
   scoring: ScoringType;
   isPublic: boolean;
   author: string | null;
+  /** virtual বাদে */
   participantCount: number;
 }
 
@@ -324,9 +367,18 @@ export interface ContestDetail extends ContestSummary {
   /** দেখার অনুমতি না থাকলে খালি (যেমন শুরুর আগে) */
   problems: ContestProblemRef[];
   viewer: {
+    /** আসল রেজিস্ট্রেশন (virtual না) */
     registered: boolean;
     /** author বা admin */
     canManage: boolean;
+    /** রেজিস্টার করা বা virtual — না হলে null */
+    participation: {
+      virtual: boolean;
+      /** WINDOW/virtual-এ Start চাপার সময় */
+      startedAt: string | null;
+      /** নিজের শেষ সময় (Start না চাপলে null) */
+      endsAt: string | null;
+    } | null;
   };
 }
 
@@ -341,6 +393,10 @@ export interface ContestInput {
   penaltyMinutes: number;
   freezeMinutes: number;
   isPublic: boolean;
+  /** undefined = FIXED */
+  type?: ContestType;
+  /** WINDOW-এ জানালা কত মিনিট খোলা (durationMinutes-এর সমান বা বেশি) */
+  windowMinutes?: number;
   /** undefined = বদলাবে না, "" = পাসওয়ার্ড তুলে দাও */
   password?: string;
   /** undefined = নতুন কনটেস্টে C/C++, এডিটে বদলাবে না */
@@ -355,7 +411,7 @@ export interface StandingsCell {
   solved: boolean;
   /** ICPC: AC-এর আগে ভুল সাবমিশন (না হলে মোট ভুল); CE/IE গোনা হয় না */
   wrong: number;
-  /** ICPC: কনটেস্ট শুরু থেকে কত মিনিটে AC */
+  /** ICPC: প্রতিযোগীর নিজের শুরু থেকে কত মিনিটে AC (WINDOW/virtual-এ নিজের Start থেকে) */
   solvedAtMinute: number | null;
   /** এই প্রবলেম সবার আগে এই প্রতিযোগী সলভ করেছে */
   firstSolve: boolean;
@@ -378,6 +434,8 @@ export interface StandingsRow {
   penalty: number;
   /** প্রবলেমের লেবেল অনুযায়ী */
   cells: Record<string, StandingsCell>;
+  /** কনটেস্ট শেষে নিজে দেওয়া — rank আসলদের মধ্যে কোথায় পড়ত (আসলদের rank বদলায় না) */
+  virtual: boolean;
 }
 
 /** GET /api/contests/:slug/standings */
@@ -387,6 +445,8 @@ export interface StandingsView {
   frozen: boolean;
   problems: { label: string; title: string; solvedBy: number; triedBy: number }[];
   rows: StandingsRow[];
+  /** virtual চলাকালীন: আসল প্রতিযোগীদের এই মিনিট পর্যন্ত অবস্থা দেখানো হচ্ছে */
+  ghostMinute?: number;
   generatedAt: string;
 }
 

@@ -11,20 +11,20 @@ import { ContestHeader } from "../../contest-header";
 import { useContest } from "../../use-contest";
 
 export function ContestProblem({ slug, label }: { slug: string; label: string }) {
-  const { contest, phase, now, error: contestError } = useContest(slug);
+  const { contest, phase, personal, now, error: contestError } = useContest(slug);
   const { user } = useAuth();
   const [problem, setProblem] = useState<ContestProblemView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
 
-  // phase বদলালে (যেমন শুরু হলে) আবার চেষ্টা করি
+  // phase বা নিজের ঘড়ি বদলালে (যেমন শুরু হলে, Start চাপলে) আবার চেষ্টা করি
   useEffect(() => {
     setError(null);
     api<ContestProblemView>(`/contests/${encodeURIComponent(slug)}/problems/${encodeURIComponent(label)}`).then(
       setProblem,
       (e: Error) => setError(e.message),
     );
-  }, [slug, label, phase]);
+  }, [slug, label, phase, personal]);
 
   if (contestError) return <p className="text-red-600">Could not load contest: {contestError}</p>;
   if (!contest || !phase) return <p className="text-zinc-500">Loading…</p>;
@@ -67,7 +67,9 @@ export function ContestProblem({ slug, label }: { slug: string; label: string })
             languages={phase === "ENDED" ? undefined : contest.languages}
             loginNext={`/contests/${contest.slug}/problems/${problem.label}`}
             note={
-              phase === "ENDED" ? (
+              contest.viewer.participation?.virtual && personal === "RUNNING" ? (
+                <p className="text-sm text-zinc-500">Virtual participation — this counts in your virtual row of the standings.</p>
+              ) : phase === "ENDED" ? (
                 <p className="text-sm text-zinc-500">The contest is over — this submission is practice and won&apos;t change the standings.</p>
               ) : contest.viewer.canManage && !contest.viewer.registered ? (
                 <p className="text-sm text-zinc-500">You manage this contest — your submissions are tests and won&apos;t appear in the standings.</p>

@@ -183,6 +183,11 @@ model Submission {
 
 // ---------------- Contests ----------------
 
+enum ContestType {
+  FIXED // সবাই একসাথে
+  WINDOW // জানালার মধ্যে প্রত্যেকে নিজের সময়ে শুরু করে
+}
+
 enum ScoringType {
   ICPC // সলভ সংখ্যা + penalty
   IOI // আংশিক নম্বর (পাস করা টেস্টের অনুপাতে)
@@ -193,11 +198,15 @@ model Contest {
   slug            String      @unique
   title           String
   description     String      @default("") // Markdown
+  /// WINDOW-এ: জানালা খোলার সময়
   startsAt        DateTime
+  /// WINDOW-এ: প্রত্যেক প্রতিযোগী কত মিনিট পায়
   durationMinutes Int
-  /// startsAt + durationMinutes — সেভের সময় হিসাব হয়, query-তে "শেষ হয়েছে কি না" দেখতে লাগে
+  /// FIXED: startsAt + durationMinutes; WINDOW: জানালা বন্ধের সময়।
+  /// সেভের সময় হিসাব হয়, query-তে "শেষ হয়েছে কি না" দেখতে লাগে
   endsAt          DateTime
   scoring         ScoringType @default(ICPC)
+  type            ContestType @default(FIXED)
   /// ICPC: প্রতিটা ভুল সাবমিশনে কত মিনিট (CE বাদে)
   penaltyMinutes  Int         @default(20)
   /// শেষের এত মিনিট standings লুকানো থাকে (০ = freeze নেই); কনটেস্ট শেষে নিজে থেকে খুলে যায়
@@ -243,6 +252,10 @@ model ContestParticipant {
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   registeredAt DateTime @default(now())
+  /// WINDOW বা virtual-এ "Start" চাপার সময় (FIXED-এ null)
+  startedAt    DateTime?
+  /// কনটেস্ট শেষ হওয়ার পরে নিজে নিজে দেওয়া — standings-এ আলাদা চিহ্ন, আসলদের rank বদলায় না
+  virtual      Boolean  @default(false)
 
   @@id([contestId, userId])
   @@index([userId])

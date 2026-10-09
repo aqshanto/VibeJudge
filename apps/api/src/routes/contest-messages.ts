@@ -137,7 +137,9 @@ export async function contestMessageRoutes(app: FastifyInstance) {
       if (!ctx.access.registered && !ctx.access.canManage) {
         return reply.code(403).send({ error: "Register for the contest to ask questions" });
       }
-      if (ctx.access.phase !== "RUNNING") return reply.code(409).send({ error: "Questions can be asked only during the contest" });
+      // নিজের ঘড়িতে চলাকালীন (WINDOW-এ Start চাপার পর থেকে নিজের সময় শেষ পর্যন্ত)
+      const running = ctx.access.canManage ? ctx.access.phase === "RUNNING" : ctx.access.personal === "RUNNING";
+      if (!running) return reply.code(409).send({ error: "Questions can be asked only during the contest" });
       const label = req.body.label ? req.body.label.toUpperCase() : null;
       if (label && !ctx.contest.problems.some((p) => p.label === label)) {
         return reply.code(400).send({ error: "Unknown problem" });

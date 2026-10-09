@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   CONTEST_LIMITS,
+  CONTEST_TYPES,
   LANGUAGES,
   LANGUAGE_INFO,
   MAX_SOURCE_BYTES,
@@ -21,7 +22,8 @@ import {
   contestAccess,
   invalidateContest,
   loadContestCached,
-  rememberRegistration,
+  rememberParticipation,
+  type ContestAccess,
   type LoadedContest,
 } from "../contest-access.js";
 import { notifyWork } from "../queue.js";
@@ -62,6 +64,12 @@ const CONTEST_BODY = {
     },
     freezeMinutes: { type: "integer", minimum: 0 },
     isPublic: { type: "boolean" },
+    type: { type: "string", enum: [...CONTEST_TYPES] },
+    windowMinutes: {
+      type: "integer",
+      minimum: CONTEST_LIMITS.durationMinutes.min,
+      maximum: CONTEST_LIMITS.durationMinutes.max,
+    },
     password: { type: "string", maxLength: 100 },
     // না পাঠালে: নতুন কনটেস্টে C/C++, এডিটে আগেরটাই
     languages: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", enum: [...LANGUAGES] } },
@@ -80,7 +88,9 @@ export function toSummary(c: LoadedContest): ContestSummary {
     id: c.id,
     slug: c.slug,
     title: c.title,
+    type: c.type,
     startsAt: c.startsAt.toISOString(),
+    endsAt: c.endsAt.toISOString(),
     durationMinutes: c.durationMinutes,
     scoring: c.scoring,
     isPublic: c.isPublic,
@@ -97,6 +107,10 @@ async function validateInput(
   const slug = input.slug.trim().toLowerCase();
   if (!SLUG_RE.test(slug)) return { error: "Short name must be 3–40 characters: a-z, 0-9 and -" };
   if (input.freezeMinutes > input.durationMinutes) return { error: "Freeze can't be longer than the contest" };
+  const type = input.type ?? "FIXED";
+  if (type === "WINDOW" && (input.windowMinutes ?? 0) < input.durationMinutes) {
+    return { error: "The window must be at least as long as each participant's time" };
+  }
 
   // Author নিজের প্রবলেম বা Public প্রবলেম নিতে পারে; Admin যেকোনো
   const problems = await prisma!.problem.findMany({
@@ -119,10 +133,13 @@ async function validateInput(
     description: input.description,
     startsAt,
     durationMinutes: input.durationMinutes,
-    endsAt: new Date(startsAt.getTime() + input.durationMinutes * 60_000),
+    type,
+    // WINDOW: জানালা বন্ধের সময়; FIXED: শুরু + দৈর্ঘ্য
+    endsAt: new Date(startsAt.getTime() + (type === "WINDOW" ? input.windowMinutes! : input.durationMinutes) * 60_000),
     scoring: input.scoring,
     penaltyMinutes: input.penaltyMinutes,
-    freezeMinutes: input.freezeMinutes,
+    // WINDOW-এ জানালা বন্ধ না হওয়া পর্যন্ত standings লুকানো থাকে — আলাদা freeze লাগে না
+    freezeMinutes: type === "WINDOW" ? 0 : input.freezeMinutes,
     isPublic: input.isPublic,
     ...(input.languages ? { languages: LANGUAGES.filter((l) => input.languages!.includes(l)) } : {}),
     ...(input.password === undefined
@@ -156,19 +173,44 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
     problems: access.canSeeProblems
       ? contest.problems.map((cp) => ({ label: cp.label, slug: cp.problem.slug, title: cp.problem.title }))
       : [],
-    viewer: { registered: access.registered, canManage: access.canManage },
+    viewer: {
+      registered: access.registered,
+      canManage: access.canManage,
+      participation: access.participation && {
+        virtual: access.participation.virtual,
+        startedAt: access.participation.startedAt?.toISOString() ?? null,
+        endsAt: access.window ? new Date(access.window.end).toISOString() : null,
+      },
+    },
   };
 }
 
 type SlugParams = { Params: { slug: string } };
 
+/** প্রবলেম কেন দেখা যাচ্ছে না — WINDOW-এ নিজের ঘড়ি অনুযায়ী */
+function noProblemsReason(access: ContestAccess, fallback: string): string {
+  if (access.phase === "UPCOMING") return "The contest hasn't started yet";
+  if (access.registered && access.personal === "NOT_STARTED") return "Press Start on the contest page to begin your time";
+  if (access.registered && access.personal === "FINISHED") {
+    return "Your time is over — problems open for practice when the window closes";
+  }
+  return fallback;
+}
+
 /** DB থেকে প্রতিযোগী আর গোনার মতো সাবমিশন এনে standings হিসাব */
-async function loadStandings(contest: LoadedContest, freezeAt: Date | null) {
+async function loadStandings(
+  contest: LoadedContest,
+  freezeAt: Date | null,
+  /** virtual চলাকালীন: আসলরা + শুধু এই virtual প্রতিযোগী, প্রত্যেকের নিজের শুরু থেকে cutoffMs পর্যন্ত */
+  ghost?: { userId: string; cutoffMs: number },
+) {
   const [participants, submissions] = await Promise.all([
     prisma!.contestParticipant.findMany({
-      where: { contestId: contest.id },
+      where: { contestId: contest.id, ...(ghost ? { OR: [{ virtual: false }, { userId: ghost.userId }] } : {}) },
       select: {
         userId: true,
+        startedAt: true,
+        virtual: true,
         user: { select: { username: true, displayName: true, institution: true, batch: true, section: true } },
       },
     }),
@@ -180,11 +222,17 @@ async function loadStandings(contest: LoadedContest, freezeAt: Date | null) {
   ]);
   return computeStandings({
     scoring: contest.scoring,
-    startsAt: contest.startsAt,
     penaltyMinutes: contest.penaltyMinutes,
     freezeAt,
+    cutoffMs: ghost?.cutoffMs,
     problems: contest.problems.map((cp) => ({ problemId: cp.problem.id, label: cp.label, title: cp.problem.title })),
-    participants: participants.map((p) => ({ userId: p.userId, ...p.user })),
+    participants: participants.map((p) => ({
+      userId: p.userId,
+      // FIXED-এর আসল প্রতিযোগীরা সবাই কনটেস্টের শুরু থেকে
+      startedAt: !p.virtual && contest.type === "FIXED" ? contest.startsAt : p.startedAt,
+      virtual: p.virtual,
+      ...p.user,
+    })),
     submissions: submissions.filter((s): s is typeof s & { userId: string } => s.userId !== null),
   });
 }
@@ -253,7 +301,7 @@ export async function contestRoutes(app: FastifyInstance) {
         include: {
           problems: { include: { problem: { select: { id: true, slug: true, title: true } } } },
           author: { select: { username: true } },
-          _count: { select: { participants: true } },
+          _count: { select: { participants: { where: { virtual: false } } } },
         },
       });
       return { contests: rows.map(toSummary) };
@@ -297,6 +345,8 @@ export async function contestRoutes(app: FastifyInstance) {
       description: contest.description,
       startsAt: contest.startsAt.toISOString(),
       durationMinutes: contest.durationMinutes,
+      type: contest.type,
+      windowMinutes: Math.round((contest.endsAt.getTime() - contest.startsAt.getTime()) / 60_000),
       scoring: contest.scoring,
       penaltyMinutes: contest.penaltyMinutes,
       freezeMinutes: contest.freezeMinutes,
@@ -356,22 +406,88 @@ export async function contestRoutes(app: FastifyInstance) {
         create: { contestId: contest.id, userId: user.id },
         update: {},
       });
-      rememberRegistration(contest.id, user.id);
+      rememberParticipation(contest.id, user.id, { virtual: false, startedAt: null });
       invalidateContest(contest.slug); // প্রতিযোগীর সংখ্যা বদলেছে
       return { ok: true };
+    },
+  );
+
+  // WINDOW: রেজিস্টার করা প্রতিযোগী নিজের সময়ে শুরু করে — তখন থেকে তার ঘড়ি চলে
+  app.post<SlugParams>("/contests/:slug/start", async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return reply;
+    const contest = await loadOr404(req, reply);
+    if (!contest) return reply;
+    if (contest.type !== "WINDOW") return reply.code(400).send({ error: "This contest starts at a fixed time" });
+    const access = await contestAccess(contest, user);
+    if (!access.registered) return reply.code(403).send({ error: "Register for the contest first" });
+    if (access.phase === "UPCOMING") return reply.code(409).send({ error: "The window hasn't opened yet" });
+    if (access.phase === "ENDED") return reply.code(409).send({ error: "The window has closed" });
+    if (access.participation?.startedAt) return detail(req, contest); // দুবার চাপলে কিছু হয় না
+
+    // দুই ট্যাব থেকে একসাথে চাপলেও প্রথম সময়টাই থাকে
+    await prisma!.contestParticipant.updateMany({
+      where: { contestId: contest.id, userId: user.id, startedAt: null },
+      data: { startedAt: new Date() },
+    });
+    const row = await prisma!.contestParticipant.findUniqueOrThrow({
+      where: { contestId_userId: { contestId: contest.id, userId: user.id } },
+      select: { virtual: true, startedAt: true },
+    });
+    rememberParticipation(contest.id, user.id, row);
+    return detail(req, contest);
+  });
+
+  // কনটেস্ট শেষে: যে আসলে অংশ নেয়নি, সে নিজের সময়ে একই সময়সীমায় দিতে পারে
+  app.post<SlugParams>(
+    "/contests/:slug/virtual",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const user = await requireUser(req, reply);
+      if (!user) return reply;
+      const contest = await loadOr404(req, reply);
+      if (!contest) return reply;
+      const access = await contestAccess(contest, user);
+      if (access.phase !== "ENDED") return reply.code(409).send({ error: "Virtual participation opens after the contest ends" });
+      if (!contest.isPublic) return reply.code(403).send({ error: "Virtual participation is only for public contests" });
+      if (access.canManage) return reply.code(409).send({ error: "You manage this contest" });
+      if (access.participation) {
+        return reply.code(409).send({
+          error: access.participation.virtual ? "You already did this contest virtually" : "You took part in this contest",
+        });
+      }
+      try {
+        await prisma!.contestParticipant.create({
+          data: { contestId: contest.id, userId: user.id, virtual: true, startedAt: new Date() },
+        });
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err; // দুবার চাপলে
+      }
+      const row = await prisma!.contestParticipant.findUniqueOrThrow({
+        where: { contestId_userId: { contestId: contest.id, userId: user.id } },
+        select: { virtual: true, startedAt: true },
+      });
+      rememberParticipation(contest.id, user.id, row);
+      return detail(req, contest);
     },
   );
 
   app.get<SlugParams>("/contests/:slug/standings", async (req, reply) => {
     const contest = await loadOr404(req, reply);
     if (!contest) return reply;
-    const access = await contestAccess(contest, await getSessionUser(req));
+    const viewer = await getSessionUser(req);
+    const viewerId = viewer?.id;
+    const access = await contestAccess(contest, viewer);
     if (!contest.isPublic && !access.registered && !access.canManage) {
       return reply.code(403).send({ error: "Only participants can see the standings of this contest" });
     }
     // শুরুর আগে প্রবলেমের নামও ফাঁস হবে না
     if (access.phase === "UPCOMING" && !access.canManage) {
       return reply.code(403).send({ error: "Standings appear when the contest starts" });
+    }
+    // WINDOW: যারা পরে শুরু করবে তারা যেন জেনে না যায় কোন প্রবলেম সহজ
+    if (contest.type === "WINDOW" && access.phase === "RUNNING" && !access.canManage) {
+      return reply.code(403).send({ error: "Standings appear when the window closes" });
     }
 
     // Freeze শুধু চলাকালীন আর author-ছাড়া সবার জন্য; শেষ হলে নিজে থেকে খুলে যায়
@@ -381,11 +497,23 @@ export async function contestRoutes(app: FastifyInstance) {
         : null;
     const effectiveFreeze = freezeAt && Date.now() >= freezeAt.getTime() ? freezeAt : null;
 
-    // কনটেস্ট এডিট হলে (updatedAt বদলালে) পুরোনো cache আর ব্যবহার হয় না
-    const key = `${contest.id}:${contest.updatedAt.getTime()}:${effectiveFreeze ? "frozen" : "live"}`;
-    const ttl = access.phase === "RUNNING" ? 10_000 : 60_000;
+    // virtual চলাকালীন: আসলরা ঠিক ততক্ষণ পর্যন্ত যতক্ষণ এই প্রতিযোগী দিচ্ছে (১০ সেকেন্ডে এক ধাপ)
+    const ghostMs =
+      access.participation?.virtual && access.personal === "RUNNING" && access.window
+        ? Math.floor((Date.now() - access.window.start) / 10_000) * 10_000
+        : null;
 
-    const { json, gzip, etag } = await cachedStandings(key, ttl, () => loadStandings(contest, effectiveFreeze));
+    // কনটেস্ট এডিট হলে (updatedAt বদলালে) পুরোনো cache আর ব্যবহার হয় না
+    const key =
+      `${contest.id}:${contest.updatedAt.getTime()}:${effectiveFreeze ? "frozen" : "live"}` +
+      (ghostMs !== null ? `:ghost:${viewerId}:${ghostMs}` : "");
+    const ttl = access.phase === "RUNNING" || ghostMs !== null ? 10_000 : 60_000;
+
+    const { json, gzip, etag } = await cachedStandings(key, ttl, async () => {
+      if (ghostMs === null) return loadStandings(contest, effectiveFreeze);
+      const view = await loadStandings(contest, null, { userId: viewerId!, cutoffMs: ghostMs });
+      return { ...view, ghostMinute: Math.floor(ghostMs / 60_000) };
+    });
 
     // ব্রাউজার আগের ETag পাঠালে আর কিছু না বদলালে শুধু 304 (প্রায় ০ বাইট)
     reply.header("etag", etag).header("cache-control", "private, no-cache").header("vary", "accept-encoding");
@@ -415,7 +543,8 @@ export async function contestRoutes(app: FastifyInstance) {
       else header.push(`${p.label} score`);
     }
     const lines = [header.map(csvCell).join(",")];
-    for (const r of s.rows) {
+    // মার্কসের জন্য শুধু আসল প্রতিযোগী (virtual বাদ)
+    for (const r of s.rows.filter((row) => !row.virtual)) {
       const cells: (string | number | null)[] = [r.rank, r.username, r.displayName, r.institution, r.batch, r.section, r.points];
       if (icpc) cells.push(r.penalty);
       for (const p of s.problems) {
@@ -440,7 +569,7 @@ export async function contestRoutes(app: FastifyInstance) {
     const access = await contestAccess(contest, await getSessionUser(req));
     if (!access.canSeeProblems) {
       return reply.code(403).send({
-        error: access.phase === "UPCOMING" ? "The contest hasn't started yet" : "Register for the contest to see problems",
+        error: noProblemsReason(access, "Register for the contest to see problems"),
       });
     }
     const cp = contest.problems.find((p) => p.label === req.params.label.toUpperCase());
@@ -501,7 +630,7 @@ export async function contestRoutes(app: FastifyInstance) {
       const access = await contestAccess(contest, user);
       if (!access.canSeeProblems) {
         return reply.code(403).send({
-          error: access.phase === "UPCOMING" ? "The contest hasn't started yet" : "Register for the contest first",
+          error: noProblemsReason(access, "Register for the contest first"),
         });
       }
       const cp = contest.problems.find((p) => p.label === req.body.label.toUpperCase());
@@ -517,8 +646,8 @@ export async function contestRoutes(app: FastifyInstance) {
           problemId: cp.problem.id,
           userId: user.id,
           contestId: contest.id,
-          // চলাকালীন রেজিস্টার করা প্রতিযোগী → standings-এ গোনা হবে; বাকিটা upsolve/টেস্ট
-          inContest: access.phase === "RUNNING" && access.registered,
+          // নিজের ঘড়িতে চলাকালীন প্রতিযোগী (আসল বা virtual) → standings-এ গোনা হবে; বাকিটা upsolve/টেস্ট
+          inContest: access.countsForStandings,
           language: req.body.language,
           source: req.body.source,
         },

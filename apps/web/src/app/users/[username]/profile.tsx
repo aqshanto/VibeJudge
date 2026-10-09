@@ -127,7 +127,7 @@ function ContestList({ title, contests, empty }: { title: string; contests: Cont
               <Link href={`/contests/${c.slug}`} className="font-medium text-sky-700 hover:underline dark:text-sky-400">
                 {c.title}
               </Link>
-              <PhaseBadge phase={contestPhase(c.startsAt, c.durationMinutes)} />
+              <PhaseBadge phase={contestPhase(c.startsAt, c.endsAt)} />
               <span className="text-zinc-500">{formatDateTime(c.startsAt)}</span>
             </li>
           ))}

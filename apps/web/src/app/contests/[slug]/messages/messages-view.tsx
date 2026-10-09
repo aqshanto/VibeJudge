@@ -9,7 +9,7 @@ import { useContest } from "../use-contest";
 import { useContestMessages } from "../use-messages";
 
 export function MessagesView({ slug }: { slug: string }) {
-  const { contest, phase, now, error } = useContest(slug);
+  const { contest, phase, personal, now, error } = useContest(slug);
   const msgs = useContestMessages(slug, phase);
   const { markSeen, messages } = msgs;
 
@@ -22,7 +22,8 @@ export function MessagesView({ slug }: { slug: string }) {
   if (!contest || !phase) return <p className="text-zinc-500">Loading…</p>;
 
   const canManage = contest.viewer.canManage;
-  const canAsk = phase === "RUNNING" && (contest.viewer.registered || canManage);
+  // প্রতিযোগী নিজের ঘড়িতে চলাকালীন (WINDOW-এ Start চাপার পর থেকে); author পুরো সময়
+  const canAsk = canManage ? phase === "RUNNING" : contest.viewer.registered && personal === "RUNNING";
   const unanswered = messages?.clarifications.filter((c) => c.answer === null) ?? [];
   const answered = messages?.clarifications.filter((c) => c.answer !== null) ?? [];
 

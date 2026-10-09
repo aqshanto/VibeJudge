@@ -6,13 +6,20 @@ import type { ScoringType, StandingsCell, StandingsRow, StandingsView, Verdict }
 
 export interface StandingsInput {
   scoring: ScoringType;
-  startsAt: Date;
   penaltyMinutes: number;
   /** এই সময়ের পরের সাবমিশন লুকানো থাকবে (null = freeze নেই/দর্শক author) */
   freezeAt: Date | null;
+  /**
+   * virtual চলাকালীন "ভূত" standings: প্রত্যেকের নিজের শুরু থেকে এত ms পরের সাবমিশন বাদ
+   * (যাতে আসলদের ঠিক ততক্ষণের অবস্থার সাথে তুলনা হয়)
+   */
+  cutoffMs?: number;
   problems: { problemId: string; label: string; title: string }[];
   participants: {
     userId: string;
+    /** নিজের শুরু (FIXED-এ কনটেস্টের শুরু); WINDOW-এ Start না চাপলে null */
+    startedAt: Date | null;
+    virtual: boolean;
     username: string;
     displayName: string | null;
     institution: string | null;
@@ -44,10 +51,15 @@ export function computeStandings(input: StandingsInput): Omit<StandingsView, "ge
   // প্রবলেম অনুযায়ী সবার আগে AC (firstSolve)
   const firstAc = new Map<string, { userId: string; at: number }>();
 
+  const who = new Map(input.participants.map((p) => [p.userId, p]));
+
   for (const s of input.submissions) {
     const label = labelOf.get(s.problemId);
     const cell = label && cells.get(s.userId)?.get(label);
-    if (!cell || !label) continue; // রেজিস্ট্রেশন মুছে গেছে বা প্রবলেম সরানো হয়েছে
+    const p = who.get(s.userId);
+    if (!cell || !label || !p?.startedAt) continue; // রেজিস্ট্রেশন মুছে গেছে বা প্রবলেম সরানো হয়েছে
+    const elapsedMs = s.createdAt.getTime() - p.startedAt.getTime();
+    if (input.cutoffMs !== undefined && elapsedMs > input.cutoffMs) continue;
 
     const hidden = input.freezeAt !== null && s.createdAt >= input.freezeAt;
     const judging = s.verdict === "PENDING" || s.verdict === "JUDGING";
@@ -61,9 +73,10 @@ export function computeStandings(input: StandingsInput): Omit<StandingsView, "ge
       if (IGNORED.includes(s.verdict)) continue;
       if (s.verdict === "AC") {
         cell.solved = true;
-        cell.solvedAtMinute = Math.floor((s.createdAt.getTime() - input.startsAt.getTime()) / 60_000);
+        cell.solvedAtMinute = Math.floor(elapsedMs / 60_000);
+        // "সবার আগে" শুধু আসলদের মধ্যে, নিজের শুরু থেকে কত দ্রুত
         const prev = firstAc.get(label);
-        if (!prev || s.createdAt.getTime() < prev.at) firstAc.set(label, { userId: s.userId, at: s.createdAt.getTime() });
+        if (!p.virtual && (!prev || elapsedMs < prev.at)) firstAc.set(label, { userId: s.userId, at: elapsedMs });
       } else {
         cell.wrong++;
       }
@@ -108,20 +121,27 @@ export function computeStandings(input: StandingsInput): Omit<StandingsView, "ge
       points,
       penalty,
       cells: Object.fromEntries(mine),
+      virtual: p.virtual,
     };
   });
 
   // বেশি points আগে, তারপর কম penalty; সমান হলে একই rank (তারপর নাম অনুযায়ী সাজানো)
-  rows.sort((a, b) => b.points - a.points || a.penalty - b.penalty || a.username.localeCompare(b.username));
-  rows.forEach((row, i) => {
-    const prev = rows[i - 1];
-    row.rank = prev && prev.points === row.points && prev.penalty === row.penalty ? prev.rank : i + 1;
+  const better = (a: StandingsRow, b: StandingsRow) => b.points - a.points || a.penalty - b.penalty;
+  rows.sort((a, b) => better(a, b) || Number(a.virtual) - Number(b.virtual) || a.username.localeCompare(b.username));
+  // rank শুধু আসলদের মধ্যে; virtual-এর rank = আসলদের মধ্যে কোথায় পড়ত (আসলদের rank বদলায় না)
+  const real = rows.filter((r) => !r.virtual);
+  real.forEach((row, i) => {
+    const prev = real[i - 1];
+    row.rank = prev && better(prev, row) === 0 ? prev.rank : i + 1;
   });
+  for (const row of rows) {
+    if (row.virtual) row.rank = 1 + real.filter((r) => better(r, row) < 0).length;
+  }
 
   const problems = input.problems.map((p) => {
     let solvedBy = 0;
     let triedBy = 0;
-    for (const row of rows) {
+    for (const row of real) {
       const c = row.cells[p.label]!;
       const tried = c.solved || c.wrong > 0 || c.pending > 0 || c.score !== null;
       if (tried) triedBy++;

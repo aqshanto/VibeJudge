@@ -12,12 +12,15 @@ import { inputClass, secondaryButtonClass } from "@/components/ui";
 const REFRESH_MS = 30_000;
 
 export function Standings({ slug }: { slug: string }) {
-  const { contest, phase, now, error: contestError } = useContest(slug);
+  const { contest, phase, personal, now, error: contestError } = useContest(slug);
   const { user } = useAuth();
   const [data, setData] = useState<StandingsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [section, setSection] = useState("");
   const [batch, setBatch] = useState("");
+  const [showVirtual, setShowVirtual] = useState(false);
+  const ghost = data?.ghostMinute !== undefined;
+  const hasVirtual = useMemo(() => (data?.rows ?? []).some((r) => r.virtual), [data]);
 
   const distinct = (values: (string | null)[]) =>
     [...new Set(values.filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -25,18 +28,24 @@ export function Standings({ slug }: { slug: string }) {
   const batches = useMemo(() => distinct(data?.rows.map((r) => r.batch) ?? []), [data]);
   const filtering = section !== "" || batch !== "";
 
-  // ফিল্টার করলে সেই দলের ভেতরের rank (সমান হলে একই) — পাশে মোট rank-ও থাকে
+  // ফিল্টার করলে সেই দলের ভেতরের rank (সমান হলে একই) — পাশে মোট rank-ও থাকে।
+  // virtual সারি আসলদের rank নেয় না: তার rank = আসলদের মধ্যে কোথায় পড়ত
   const rows = useMemo(() => {
-    const list = (data?.rows ?? []).filter((r) => (!section || r.section === section) && (!batch || r.batch === batch));
-    let prev: (typeof list)[number] | undefined;
-    let prevRank = 0;
-    return list.map((r, i) => {
-      const localRank = prev && prev.points === r.points && prev.penalty === r.penalty ? prevRank : i + 1;
-      prev = r;
-      prevRank = localRank;
-      return { ...r, localRank };
+    const list = (data?.rows ?? []).filter(
+      (r) => (!section || r.section === section) && (!batch || r.batch === batch) && (!r.virtual || showVirtual || ghost),
+    );
+    const real = list.filter((r) => !r.virtual);
+    const better = (a: (typeof list)[number], b: (typeof list)[number]) => b.points - a.points || a.penalty - b.penalty;
+    const localOf = new Map<string, number>();
+    real.forEach((r, i) => {
+      const prev = real[i - 1];
+      localOf.set(r.username, prev && better(prev, r) === 0 ? localOf.get(prev.username)! : i + 1);
     });
-  }, [data, section, batch]);
+    return list.map((r) => ({
+      ...r,
+      localRank: r.virtual ? 1 + real.filter((x) => better(x, r) < 0).length : localOf.get(r.username)!,
+    }));
+  }, [data, section, batch, showVirtual, ghost]);
 
   useEffect(() => {
     if (!phase) return;
@@ -52,14 +61,16 @@ export function Standings({ slug }: { slug: string }) {
         if (!cancelled) setError((e as Error).message);
       }
       // ১০০০ জন একসাথে যেন না চায় — প্রতিবার ০-৫ সেকেন্ড এলোমেলো দেরি
-      if (!cancelled && phase === "RUNNING") timer = setTimeout(load, REFRESH_MS + Math.random() * 5000);
+      if (!cancelled && (phase === "RUNNING" || personal === "RUNNING")) {
+        timer = setTimeout(load, REFRESH_MS + Math.random() * 5000);
+      }
     };
     void load();
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [slug, phase]);
+  }, [slug, phase, personal]);
 
   if (contestError) return <p className="text-red-600">Could not load contest: {contestError}</p>;
   if (!contest || !phase) return <p className="text-zinc-500">Loading…</p>;
@@ -72,12 +83,18 @@ export function Standings({ slug }: { slug: string }) {
       {!data && !error && <p className="text-zinc-500">Loading…</p>}
       {data && (
         <>
+          {ghost && (
+            <p className="rounded-md bg-sky-500/10 px-3 py-2 text-sm text-sky-800 dark:text-sky-300">
+              Virtual participation: the real participants are shown as they were at minute <b>{data.ghostMinute}</b> of
+              their contest — the same point you are at now.
+            </p>
+          )}
           {data.frozen && (
             <p className="rounded-md bg-sky-500/10 px-3 py-2 text-sm text-sky-800 dark:text-sky-300">
               ❄ The standings are frozen. Submissions made after the freeze show as <b>?</b> until the contest ends.
             </p>
           )}
-          {(sections.length > 1 || batches.length > 1 || contest.viewer.canManage) && (
+          {(sections.length > 1 || batches.length > 1 || contest.viewer.canManage || (hasVirtual && !ghost)) && (
             <div className="flex flex-wrap items-end gap-3 text-sm">
               {sections.length > 1 && (
                 <label className="flex flex-col gap-1">
@@ -103,6 +120,12 @@ export function Standings({ slug }: { slug: string }) {
                       </option>
                     ))}
                   </select>
+                </label>
+              )}
+              {hasVirtual && !ghost && (
+                <label className="flex items-center gap-2 pb-2">
+                  <input type="checkbox" checked={showVirtual} onChange={(e) => setShowVirtual(e.target.checked)} />
+                  Show virtual participants
                 </label>
               )}
               {filtering && <span className="pb-2 text-zinc-500">{rows.length} participants</span>}
@@ -141,14 +164,21 @@ export function Standings({ slug }: { slug: string }) {
                       key={r.username}
                       className={`border-t border-black/10 dark:border-white/10 ${
                         r.username === user?.username ? "bg-amber-400/15" : ""
-                      }`}
+                      } ${r.virtual ? "text-zinc-600 dark:text-zinc-400" : ""}`}
                     >
                       <td className="px-2 py-1.5 font-medium">
                         {filtering ? r.localRank : r.rank}
                         {filtering && <div className="text-[11px] font-normal text-zinc-500">({r.rank})</div>}
                       </td>
                       <td className="px-3 py-1.5 text-left">
-                        <div className="font-medium">{r.username}</div>
+                        <div className="font-medium">
+                          {r.username}
+                          {r.virtual && (
+                            <span className="ml-1.5 rounded bg-violet-500/15 px-1.5 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">
+                              virtual
+                            </span>
+                          )}
+                        </div>
                         {(r.displayName || r.section || r.batch) && (
                           <div className="text-xs text-zinc-500">
                             {[r.displayName, r.batch && `Batch ${r.batch}`, r.section && `Sec ${r.section}`].filter(Boolean).join(" · ")}

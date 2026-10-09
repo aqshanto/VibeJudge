@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import type { ContestDetail, ContestPhase } from "@vibejudge/shared";
+import { personalState, type ContestDetail, type ContestPhase } from "@vibejudge/shared";
 import { formatCountdown } from "@/lib/time";
 import { PhaseBadge } from "../phase-badge";
+import { viewerWindow } from "./use-contest";
 import { useContestMessages } from "./use-messages";
 
 type Messages = ReturnType<typeof useContestMessages>;
@@ -26,9 +27,15 @@ export function ContestHeader({
   const msgs = given ?? own;
 
   const start = new Date(contest.startsAt).getTime();
-  const end = start + contest.durationMinutes * 60_000;
+  const end = new Date(contest.endsAt).getTime();
   const freezeAt = end - contest.freezeMinutes * 60_000;
   const frozen = phase === "RUNNING" && contest.freezeMinutes > 0 && now >= freezeAt;
+  const window = contest.type === "WINDOW";
+  const virtual = contest.viewer.participation?.virtual ?? false;
+  const mine = viewerWindow(contest);
+  const myState = contest.viewer.participation ? personalState(mine, now) : null;
+  // WINDOW চলাকালীন standings শুধু author দেখেন (সার্ভারও তাই দেয়)
+  const showStandings = contest.viewer.canManage || (phase === "ENDED") || (phase === "RUNNING" && !window);
 
   const badge = contest.viewer.canManage ? msgs.unansweredCount : msgs.newAnnouncements.length + msgs.newAnswers.length;
   const latest = msgs.newAnnouncements[0];
@@ -69,19 +76,26 @@ export function ContestHeader({
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
         {phase === "UPCOMING" && (
           <span>
-            Starts in <b className="font-mono">{formatCountdown(start - now)}</b>
+            {window ? "Window opens in" : "Starts in"} <b className="font-mono">{formatCountdown(start - now)}</b>
           </span>
         )}
-        {phase === "RUNNING" && (
+        {myState === "RUNNING" && mine && (
           <span>
-            Time left <b className="font-mono">{formatCountdown(end - now)}</b>
+            {virtual ? "Virtual · your time left" : window ? "Your time left" : "Time left"}{" "}
+            <b className="font-mono">{formatCountdown(mine.end - now)}</b>
           </span>
         )}
-        {phase === "ENDED" && <span className="text-zinc-500">The contest is over — you can still practice (upsolve).</span>}
+        {phase === "RUNNING" && (window || myState !== "RUNNING") && (
+          <span className={myState === "RUNNING" ? "text-zinc-500" : undefined}>
+            {window ? "Window closes in" : "Time left"} <b className="font-mono">{formatCountdown(end - now)}</b>
+          </span>
+        )}
+        {phase === "ENDED" && myState !== "RUNNING" && (
+          <span className="text-zinc-500">The contest is over — you can still practice (upsolve).</span>
+        )}
         <nav className="ml-auto flex flex-wrap gap-4">
           {link(`/contests/${contest.slug}`, "Problems", active === "overview")}
-          {(phase !== "UPCOMING" || contest.viewer.canManage) &&
-            link(`/contests/${contest.slug}/standings`, "Standings", active === "standings")}
+          {showStandings && link(`/contests/${contest.slug}/standings`, "Standings", active === "standings")}
           {link(
             `/contests/${contest.slug}/messages`,
             <>

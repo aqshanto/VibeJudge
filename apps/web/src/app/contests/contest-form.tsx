@@ -11,6 +11,7 @@ import {
   problemLabel,
   type AuthorProblemSummary,
   type ContestInput,
+  type ContestType,
   type Language,
   type ScoringType,
 } from "@vibejudge/shared";
@@ -47,6 +48,10 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
   const [hours, setHours] = useState("2");
   const [minutes, setMinutes] = useState("0");
   const [scoring, setScoring] = useState<ScoringType>("ICPC");
+  const [type, setType] = useState<ContestType>("FIXED");
+  // WINDOW: জানালা কতক্ষণ খোলা (প্রত্যেকে পায় hours/minutes)
+  const [winHours, setWinHours] = useState("6");
+  const [winMinutes, setWinMinutes] = useState("0");
   const [penalty, setPenalty] = useState("20");
   const [freeze, setFreeze] = useState("0");
   const [isPublic, setIsPublic] = useState(true);
@@ -85,6 +90,11 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
       setHours(String(Math.floor(c.durationMinutes / 60)));
       setMinutes(String(c.durationMinutes % 60));
       setScoring(c.scoring);
+      setType(c.type ?? "FIXED");
+      if (c.type === "WINDOW" && c.windowMinutes) {
+        setWinHours(String(Math.floor(c.windowMinutes / 60)));
+        setWinMinutes(String(c.windowMinutes % 60));
+      }
       setPenalty(String(c.penaltyMinutes));
       setFreeze(String(c.freezeMinutes));
       setIsPublic(c.isPublic);
@@ -120,6 +130,8 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
       startsAt: new Date(startsAt).toISOString(),
       durationMinutes,
       scoring,
+      type,
+      ...(type === "WINDOW" ? { windowMinutes: Number(winHours) * 60 + Number(winMinutes) } : {}),
       penaltyMinutes: Number(penalty),
       freezeMinutes: Number(freeze),
       isPublic,
@@ -169,17 +181,50 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
         />
       </Field>
 
+      <fieldset className="flex flex-col gap-2 text-sm">
+        <legend className="mb-1.5 font-medium">Timing</legend>
+        <label className="flex items-start gap-2">
+          <input type="radio" checked={type === "FIXED"} onChange={() => setType("FIXED")} className="mt-1" />
+          <span>
+            <b>Fixed time</b> <span className="text-zinc-500">— everyone starts and ends together.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="radio" checked={type === "WINDOW"} onChange={() => setType("WINDOW")} className="mt-1" />
+          <span>
+            <b>Window</b>{" "}
+            <span className="text-zinc-500">
+              — each participant presses Start any time inside the window and gets the same length (e.g. sections taking a lab
+              exam at different hours). Standings stay hidden until the window closes.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Start (your local time)">
+        <Field label={type === "WINDOW" ? "Window opens (your local time)" : "Start (your local time)"}>
           <input className={inputClass} type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} required />
         </Field>
-        <Field label="Length (hours)">
+        <Field label={type === "WINDOW" ? "Each participant gets (hours)" : "Length (hours)"}>
           <input className={inputClass} type="number" min={0} value={hours} onChange={(e) => setHours(e.target.value)} required />
         </Field>
         <Field label="+ minutes">
           <input className={inputClass} type="number" min={0} max={59} value={minutes} onChange={(e) => setMinutes(e.target.value)} required />
         </Field>
       </div>
+      {type === "WINDOW" && (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field
+            label="Window stays open (hours)"
+            hint="Someone who starts late gets only the time left until the window closes."
+          >
+            <input className={inputClass} type="number" min={0} value={winHours} onChange={(e) => setWinHours(e.target.value)} required />
+          </Field>
+          <Field label="+ minutes">
+            <input className={inputClass} type="number" min={0} max={59} value={winMinutes} onChange={(e) => setWinMinutes(e.target.value)} required />
+          </Field>
+        </div>
+      )}
 
       <fieldset className="flex flex-col gap-2 text-sm">
         <legend className="mb-1.5 font-medium">Scoring</legend>
@@ -211,9 +256,11 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
             />
           </Field>
         )}
-        <Field label="Freeze standings for the last … minutes" hint="0 = no freeze. Unfreezes when the contest ends.">
-          <input className={inputClass} type="number" min={0} value={freeze} onChange={(e) => setFreeze(e.target.value)} required />
-        </Field>
+        {type === "FIXED" && (
+          <Field label="Freeze standings for the last … minutes" hint="0 = no freeze. Unfreezes when the contest ends.">
+            <input className={inputClass} type="number" min={0} value={freeze} onChange={(e) => setFreeze(e.target.value)} required />
+          </Field>
+        )}
       </div>
 
       <fieldset className="flex flex-col gap-2 text-sm">

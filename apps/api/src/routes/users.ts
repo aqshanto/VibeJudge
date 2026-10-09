@@ -9,7 +9,7 @@ import { toSummary } from "./contests.js";
 const CONTEST_INCLUDE = {
   problems: { include: { problem: { select: { id: true, slug: true, title: true } } } },
   author: { select: { username: true } },
-  _count: { select: { participants: true } },
+  _count: { select: { participants: { where: { virtual: false } } } },
 } as const;
 
 export async function userRoutes(app: FastifyInstance) {
@@ -38,7 +38,7 @@ export async function userRoutes(app: FastifyInstance) {
         include: CONTEST_INCLUDE,
       }),
       prisma!.contest.findMany({
-        where: { participants: { some: { userId: user.id } }, ...contestFilter },
+        where: { participants: { some: { userId: user.id, virtual: false } }, ...contestFilter },
         orderBy: { startsAt: "desc" },
         take: 100,
         include: CONTEST_INCLUDE,
