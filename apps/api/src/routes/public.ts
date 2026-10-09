@@ -229,20 +229,24 @@ export async function publicRoutes(app: FastifyInstance) {
     const s = await prisma!.submission.findFirst({
       where: { AND: [{ id: req.params.id }, visibleSubmissions(viewer)] },
       include: {
-        problem: { select: { slug: true, title: true } },
+        problem: { select: { slug: true, title: true, authorId: true } },
         user: { select: { username: true } },
         contest: { select: { slug: true } },
       },
     });
     if (!s) return reply.code(404).send({ error: "Submission not found" });
+    const { authorId, ...problem } = s.problem;
     const labels = await contestLabels([s]);
 
     // সোর্স কোড আর compiler output শুধু নিজের (বা Admin) — অন্যরা শুধু verdict দেখবে
     const canSeeCode = viewer !== null && (viewer.id === s.userId || viewer.role === "ADMIN");
+    // checker-এর বার্তায় টেস্টের ইনপুট/উত্তর থাকে ("ok 9 + 1 = 10") — শুধু প্রবলেমের author আর Admin
+    const canSeeCheckerMessages = viewer !== null && (viewer.id === authorId || viewer.role === "ADMIN");
+    const tests = (s.testResults as TestResult[] | null) ?? [];
 
     const view: SubmissionView = {
       id: s.id,
-      problem: s.problem,
+      problem,
       user: s.user,
       language: s.language,
       source: canSeeCode ? s.source : null,
@@ -250,7 +254,7 @@ export async function publicRoutes(app: FastifyInstance) {
       timeMs: s.timeMs,
       memoryKb: s.memoryKb,
       compileOutput: canSeeCode ? s.compileOutput : null,
-      tests: (s.testResults as TestResult[] | null) ?? [],
+      tests: canSeeCheckerMessages ? tests : tests.map(({ message: _, ...t }) => t),
       contest: contestRef(s, labels),
       score: s.score,
       progress: s.verdict === "JUDGING" ? getProgress(s.id) : null,

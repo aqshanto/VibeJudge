@@ -40,6 +40,8 @@ export function SubmissionView({ id }: { id: string }) {
   if (!sub) return <p className="text-zinc-500">Loading…</p>;
 
   const done = sub.verdict !== "PENDING" && sub.verdict !== "JUDGING";
+  // checker-এর বার্তা API শুধু প্রবলেমের author/Admin-কে পাঠায়; অন্যদের কলামটাই থাকবে না
+  const showDetails = sub.tests.some((t) => t.message);
 
   return (
     <div className="flex flex-col gap-6">
@@ -98,7 +100,7 @@ export function SubmissionView({ id }: { id: string }) {
                   <th className="px-3 py-2 font-medium">Verdict</th>
                   <th className="px-3 py-2 font-medium">Time</th>
                   <th className="px-3 py-2 font-medium">Memory</th>
-                  <th className="px-3 py-2 font-medium">Details</th>
+                  {showDetails && <th className="px-3 py-2 font-medium">Details</th>}
                 </tr>
               </thead>
               <tbody>
@@ -110,7 +112,7 @@ export function SubmissionView({ id }: { id: string }) {
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">{t.timeMs} ms</td>
                     <td className="whitespace-nowrap px-3 py-2">{formatMemory(t.memoryKb)}</td>
-                    <td className="px-3 py-2 text-xs text-zinc-500">{t.message}</td>
+                    {showDetails && <td className="px-3 py-2 text-xs text-zinc-500">{t.message}</td>}
                   </tr>
                 ))}
               </tbody>
