@@ -122,9 +122,10 @@ VibeJudge/
 - [x] রিপো + pnpm monorepo (web, api, shared)
 - [x] লোকালি web → api কানেক্ট (health check)
 - [x] Render Blueprint (`render.yaml`) + Vercel rewrite কনফিগ
-- [ ] GitHub-এ পুশ
-- [ ] "Hello world" Vercel ও Render-এ ডিপ্লয়
-- [ ] Neon ডাটাবেস + Prisma কানেক্ট + প্রথম migration
+- [x] GitHub-এ পুশ
+- [x] API Render-এ ডিপ্লয় (DB connected)
+- [ ] Web Vercel-এ ডিপ্লয় (shared build ফিক্স করা হয়েছে, redeploy বাকি)
+- [x] Neon ডাটাবেস + Prisma কানেক্ট + প্রথম migration (`init`)
 
 ### ফেজ ১ — Judge কোর (সপ্তাহ ১-২) ⭐ সবচেয়ে গুরুত্বপূর্ণ
 - [ ] Docker-এ isolate + gcc/g++ (তোমার পিসিতে WSL2/Docker দিয়ে)
