@@ -124,7 +124,7 @@ VibeJudge/
 - [x] Render Blueprint (`render.yaml`) + Vercel rewrite কনফিগ
 - [x] GitHub-এ পুশ
 - [x] API Render-এ ডিপ্লয় (DB connected)
-- [ ] Web Vercel-এ ডিপ্লয় (shared build ফিক্স করা হয়েছে, redeploy বাকি)
+- [x] Web Vercel-এ ডিপ্লয় → https://vibe-judge.vercel.app (API + DB connected)
 - [x] Neon ডাটাবেস + Prisma কানেক্ট + প্রথম migration (`init`)
 
 ### ফেজ ১ — Judge কোর (সপ্তাহ ১-২) ⭐ সবচেয়ে গুরুত্বপূর্ণ

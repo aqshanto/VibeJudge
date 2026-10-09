@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 // API কোথায় চলছে। লোকালি localhost:4000, Vercel-এ Render-এর URL (env variable হিসেবে দিতে হবে)।
-const apiUrl = process.env.API_URL ?? "http://localhost:4000";
+// space আর শেষের "/" কেটে ফেলা হয়, নাহলে "//api/..." হয়ে 404 আসে।
+const apiUrl = (process.env.API_URL ?? "http://localhost:4000").trim().replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
