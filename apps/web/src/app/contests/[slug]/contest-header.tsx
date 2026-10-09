@@ -14,7 +14,7 @@ export function ContestHeader({
   contest: ContestDetail;
   phase: ContestPhase;
   now: number;
-  active: "overview" | "problem";
+  active: "overview" | "problem" | "standings";
 }) {
   const start = new Date(contest.startsAt).getTime();
   const end = start + contest.durationMinutes * 60_000;
@@ -53,6 +53,14 @@ export function ContestHeader({
           >
             Problems
           </Link>
+          {(phase !== "UPCOMING" || contest.viewer.canManage) && (
+            <Link
+              href={`/contests/${contest.slug}/standings`}
+              className={active === "standings" ? "font-medium" : "text-zinc-500 hover:text-foreground"}
+            >
+              Standings
+            </Link>
+          )}
           {contest.viewer.canManage && (
             <Link href={`/contests/${contest.slug}/edit`} className="text-zinc-500 hover:text-foreground">
               Edit

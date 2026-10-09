@@ -305,6 +305,46 @@ export interface ContestInput {
   problemSlugs: string[];
 }
 
+/** standings-এর একটা ঘর (একজন প্রতিযোগী × একটা প্রবলেম) */
+export interface StandingsCell {
+  /** ICPC: AC হয়েছে কি না */
+  solved: boolean;
+  /** ICPC: AC-এর আগে ভুল সাবমিশন (না হলে মোট ভুল); CE/IE গোনা হয় না */
+  wrong: number;
+  /** ICPC: কনটেস্ট শুরু থেকে কত মিনিটে AC */
+  solvedAtMinute: number | null;
+  /** এই প্রবলেম সবার আগে এই প্রতিযোগী সলভ করেছে */
+  firstSolve: boolean;
+  /** IOI: সবচেয়ে ভালো নম্বর (কোনো judged সাবমিশন না থাকলে null) */
+  score: number | null;
+  /** judge হচ্ছে বা freeze-এর কারণে লুকানো সাবমিশন */
+  pending: number;
+}
+
+export interface StandingsRow {
+  rank: number;
+  username: string;
+  displayName: string | null;
+  institution: string | null;
+  section: string | null;
+  /** ICPC: সলভ সংখ্যা; IOI: মোট নম্বর */
+  points: number;
+  /** ICPC: মোট penalty মিনিট (IOI-তে ০) */
+  penalty: number;
+  /** প্রবলেমের লেবেল অনুযায়ী */
+  cells: Record<string, StandingsCell>;
+}
+
+/** GET /api/contests/:slug/standings */
+export interface StandingsView {
+  scoring: ScoringType;
+  /** এই দর্শকের জন্য freeze চলছে (শেষের সাবমিশন "?" দেখায়) */
+  frozen: boolean;
+  problems: { label: string; title: string; solvedBy: number; triedBy: number }[];
+  rows: StandingsRow[];
+  generatedAt: string;
+}
+
 export interface ContestProblemView extends ProblemView {
   label: string;
   contest: { slug: string; title: string; phase: ContestPhase };

@@ -16,8 +16,15 @@ import { prisma } from "../db.js";
 import { requireUser } from "../auth/guards.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { SESSION_COOKIE, getSessionUser } from "../auth/session.js";
-import { contestAccess, loadContest, type LoadedContest } from "../contest-access.js";
+import {
+  contestAccess,
+  invalidateContest,
+  loadContestCached,
+  rememberRegistration,
+  type LoadedContest,
+} from "../contest-access.js";
 import { notifyWork } from "../queue.js";
+import { cachedStandings, computeStandings } from "../standings.js";
 
 const SLUG_RE = new RegExp(SLUG_PATTERN);
 
@@ -151,7 +158,7 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
 type SlugParams = { Params: { slug: string } };
 
 async function loadOr404(req: FastifyRequest<SlugParams>, reply: FastifyReply) {
-  const contest = await loadContest(req.params.slug);
+  const contest = await loadContestCached(req.params.slug);
   if (!contest) {
     reply.code(404).send({ error: "Contest not found" });
     return null;
@@ -213,6 +220,7 @@ export async function contestRoutes(app: FastifyInstance) {
         await setProblems(tx, c.id, v.problemIds);
         return c;
       });
+      invalidateContest(contest.slug);
       return reply.code(201).send({ slug: contest.slug });
     } catch (err) {
       if (isUniqueViolation(err)) return reply.code(409).send({ error: "This short name is already used" });
@@ -269,6 +277,7 @@ export async function contestRoutes(app: FastifyInstance) {
         if (isUniqueViolation(err)) return reply.code(409).send({ error: "This short name is already used" });
         throw err;
       }
+      invalidateContest(contest.slug, v.data.slug);
       return { slug: v.data.slug };
     },
   );
@@ -295,12 +304,75 @@ export async function contestRoutes(app: FastifyInstance) {
         create: { contestId: contest.id, userId: user.id },
         update: {},
       });
+      rememberRegistration(contest.id, user.id);
+      invalidateContest(contest.slug); // প্রতিযোগীর সংখ্যা বদলেছে
       return { ok: true };
     },
   );
 
+  app.get<SlugParams>("/contests/:slug/standings", async (req, reply) => {
+    const contest = await loadOr404(req, reply);
+    if (!contest) return reply;
+    const access = await contestAccess(contest, await getSessionUser(req));
+    if (!contest.isPublic && !access.registered && !access.canManage) {
+      return reply.code(403).send({ error: "Only participants can see the standings of this contest" });
+    }
+    // শুরুর আগে প্রবলেমের নামও ফাঁস হবে না
+    if (access.phase === "UPCOMING" && !access.canManage) {
+      return reply.code(403).send({ error: "Standings appear when the contest starts" });
+    }
+
+    // Freeze শুধু চলাকালীন আর author-ছাড়া সবার জন্য; শেষ হলে নিজে থেকে খুলে যায়
+    const freezeAt =
+      contest.freezeMinutes > 0 && access.phase === "RUNNING" && !access.canManage
+        ? new Date(contest.endsAt.getTime() - contest.freezeMinutes * 60_000)
+        : null;
+    const effectiveFreeze = freezeAt && Date.now() >= freezeAt.getTime() ? freezeAt : null;
+
+    // কনটেস্ট এডিট হলে (updatedAt বদলালে) পুরোনো cache আর ব্যবহার হয় না
+    const key = `${contest.id}:${contest.updatedAt.getTime()}:${effectiveFreeze ? "frozen" : "live"}`;
+    const ttl = access.phase === "RUNNING" ? 10_000 : 60_000;
+
+    const { json, gzip, etag } = await cachedStandings(key, ttl, async () => {
+      const [participants, submissions] = await Promise.all([
+        prisma!.contestParticipant.findMany({
+          where: { contestId: contest.id },
+          select: {
+            userId: true,
+            user: { select: { username: true, displayName: true, institution: true, section: true } },
+          },
+        }),
+        prisma!.submission.findMany({
+          where: { contestId: contest.id, inContest: true },
+          orderBy: { createdAt: "asc" },
+          select: { userId: true, problemId: true, verdict: true, score: true, createdAt: true },
+        }),
+      ]);
+      const result = computeStandings({
+        scoring: contest.scoring,
+        startsAt: contest.startsAt,
+        penaltyMinutes: contest.penaltyMinutes,
+        freezeAt: effectiveFreeze,
+        problems: contest.problems.map((cp) => ({ problemId: cp.problem.id, label: cp.label, title: cp.problem.title })),
+        participants: participants.map((p) => ({ userId: p.userId, ...p.user })),
+        submissions: submissions.filter((s): s is typeof s & { userId: string } => s.userId !== null),
+      });
+      return result;
+    });
+
+    // ব্রাউজার আগের ETag পাঠালে আর কিছু না বদলালে শুধু 304 (প্রায় ০ বাইট)
+    reply.header("etag", etag).header("cache-control", "private, no-cache").header("vary", "accept-encoding");
+    if (req.headers["if-none-match"] === etag) return reply.code(304).send();
+    reply.type("application/json; charset=utf-8");
+    if (/gzip/.test(req.headers["accept-encoding"] ?? "")) {
+      // আগে থেকে compress করা — compress plugin content-encoding দেখে আর হাত দেয় না
+      return reply.header("content-encoding", "gzip").send(gzip);
+    }
+    return reply.send(json);
+  });
+
   app.get<{ Params: { slug: string; label: string } }>("/contests/:slug/problems/:label", async (req, reply) => {
-    const contest = await loadContest(req.params.slug);
+    const contest = await loadContestCached(req.params.slug);
     if (!contest) return reply.code(404).send({ error: "Contest not found" });
     const access = await contestAccess(contest, await getSessionUser(req));
     if (!access.canSeeProblems) {
@@ -361,7 +433,7 @@ export async function contestRoutes(app: FastifyInstance) {
       if (Buffer.byteLength(req.body.source) > MAX_SOURCE_BYTES) {
         return reply.code(413).send({ error: `Source code is larger than ${MAX_SOURCE_BYTES / 1024} KB` });
       }
-      const contest = await loadContest(req.params.slug);
+      const contest = await loadContestCached(req.params.slug);
       if (!contest) return reply.code(404).send({ error: "Contest not found" });
       const access = await contestAccess(contest, user);
       if (!access.canSeeProblems) {

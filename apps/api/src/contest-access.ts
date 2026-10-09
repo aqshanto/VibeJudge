@@ -24,6 +24,51 @@ export async function loadContest(slug: string) {
 
 export type LoadedContest = NonNullable<Awaited<ReturnType<typeof loadContest>>>;
 
+// ---------- ছোট memory cache ----------
+// কনটেস্টের সময় ১০০০ জন প্রতি ৩০ সেকেন্ডে standings/প্রবলেম চায়। প্রতিবার DB-তে কনটেস্ট আর
+// রেজিস্ট্রেশন খুঁজলে DB connection pool (১০টা) লাইনে আটকে যায় — তাই কয়েক সেকেন্ড মনে রাখি।
+
+const CONTEST_TTL_MS = 5_000;
+const contestCache = new Map<string, { at: number; value: Promise<LoadedContest | null> }>();
+
+/** কনটেস্ট পড়ার জন্য (৫ সেকেন্ড পুরোনো হতে পারে); এডিটের পরে invalidateContest() ডাকতে হবে */
+export function loadContestCached(slug: string): Promise<LoadedContest | null> {
+  const hit = contestCache.get(slug);
+  if (hit && Date.now() - hit.at < CONTEST_TTL_MS) return hit.value;
+  const value = loadContest(slug).catch((err) => {
+    contestCache.delete(slug);
+    throw err;
+  });
+  if (contestCache.size > 1000) contestCache.clear();
+  contestCache.set(slug, { at: Date.now(), value });
+  return value;
+}
+
+export function invalidateContest(...slugs: string[]): void {
+  for (const s of slugs) contestCache.delete(s);
+}
+
+// রেজিস্ট্রেশন বাতিল হয় না, তাই "হ্যাঁ" অনেকক্ষণ মনে রাখা যায়; "না" অল্প সময় (রেজিস্টার করলেই বদলায়)
+const registrationCache = new Map<string, { at: number; registered: boolean }>();
+const REGISTERED_TTL_MS = 10 * 60_000;
+const NOT_REGISTERED_TTL_MS = 5_000;
+
+async function isRegistered(contestId: string, userId: string): Promise<boolean> {
+  const key = `${contestId}:${userId}`;
+  const hit = registrationCache.get(key);
+  if (hit && Date.now() - hit.at < (hit.registered ? REGISTERED_TTL_MS : NOT_REGISTERED_TTL_MS)) {
+    return hit.registered;
+  }
+  const registered = (await prisma!.contestParticipant.count({ where: { contestId, userId } })) > 0;
+  if (registrationCache.size > 50_000) registrationCache.clear();
+  registrationCache.set(key, { at: Date.now(), registered });
+  return registered;
+}
+
+export function rememberRegistration(contestId: string, userId: string): void {
+  registrationCache.set(`${contestId}:${userId}`, { at: Date.now(), registered: true });
+}
+
 export interface ContestAccess {
   phase: ContestPhase;
   canManage: boolean;
@@ -38,9 +83,7 @@ export async function contestAccess(
 ): Promise<ContestAccess> {
   const phase = contestPhase(contest.startsAt, contest.durationMinutes);
   const canManage = viewer !== null && (viewer.role === "ADMIN" || viewer.id === contest.authorId);
-  const registered =
-    viewer !== null &&
-    (await prisma!.contestParticipant.count({ where: { contestId: contest.id, userId: viewer.id } })) > 0;
+  const registered = viewer !== null && (await isRegistered(contest.id, viewer.id));
 
   const canSeeProblems =
     canManage || (phase === "RUNNING" && registered) || (phase === "ENDED" && (contest.isPublic || registered));

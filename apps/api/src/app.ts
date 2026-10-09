@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import compress from "@fastify/compress";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
@@ -18,6 +19,8 @@ export async function buildApp() {
 
   // Web সাধারণত Vercel rewrite দিয়ে একই ডোমেইন থেকে আসবে, তবু সরাসরি কলের জন্য CORS রাখা হলো।
   await app.register(cors, { origin: env.webOrigins, credentials: true });
+  // বড় JSON (যেমন ১০০০ জনের standings) gzip-এ ~১০ গুণ ছোট হয় — ফ্রি প্ল্যানের bandwidth বাঁচে
+  await app.register(compress, { global: true, threshold: 1024 });
   // rate-limit-এর আগে, যাতে keyGenerator কুকি পড়তে পারে
   await app.register(cookie);
   // শুধু যেসব route-এ config.rateLimit দেওয়া আছে সেগুলোতে
