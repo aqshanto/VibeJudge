@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.turbo/
+.vercel/
+
+# Prisma generated client (build-এর সময় আবার তৈরি হয়)
+apps/api/src/generated/
+
+# env files (secrets) — শুধু .env.example কমিট হবে
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+npm-debug.log*
+pnpm-debug.log*

@@ -1,0 +1,23 @@
+# Render Blueprint — API সার্ভার
+# Render ড্যাশবোর্ড → New → Blueprint → এই রিপো সিলেক্ট করলে নিজে থেকেই সেটআপ হবে।
+services:
+  - type: web
+    name: vibejudge-api
+    runtime: node
+    plan: free
+    region: singapore # বাংলাদেশের সবচেয়ে কাছে
+    buildCommand: >-
+      corepack enable &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter @vibejudge/api... build &&
+      pnpm --filter @vibejudge/api db:deploy
+    startCommand: pnpm --filter @vibejudge/api start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false # তৈরি করার সময় Render জিজ্ঞেস করবে — Neon-এর connection string দিও
+      - key: WEB_ORIGIN
+        sync: false # যেমন: https://vibejudge.vercel.app

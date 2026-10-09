@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# install-এর সময় শুধু এই প্যাকেজগুলোর script চলবে
+onlyBuiltDependencies:
+  - "@prisma/engines"
+  - esbuild
+  - prisma
+
+# এগুলোর install script চালানোর দরকার নেই
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+  - workerd

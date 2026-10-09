@@ -1,0 +1,35 @@
+// VibeJudge database schema
+// ফেজ ০: শুধু User — বাকি টেবিল (problems, contests, submissions...) পরের ফেজে যোগ হবে।
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  AUTHOR
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  username     String   @unique
+  displayName  String?
+  passwordHash String? // Google লগইন হলে null
+  role         Role     @default(USER)
+  institution  String?
+  batch        String?
+  section      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}

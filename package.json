@@ -1,0 +1,15 @@
+{
+  "name": "vibejudge",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @vibejudge/shared build && pnpm -r --parallel dev",
+    "dev:web": "pnpm --filter @vibejudge/web dev",
+    "dev:api": "pnpm --filter @vibejudge/api dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
