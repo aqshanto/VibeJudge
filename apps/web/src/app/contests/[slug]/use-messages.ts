@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ContestMessages, ContestPhase } from "@vibejudge/shared";
 import { api } from "@/lib/api";
+import { jitter, schedulePoll } from "@/lib/poll";
 
-const POLL_MS = 30_000;
+// ঘোষণা দেরিতে এলে ক্ষতি নেই — ৬০ সেকেন্ড (১০০০ জনে সার্ভারে প্রতি সেকেন্ডে ~১৫টা request)
+const POLL_MS = 60_000;
 const seenKey = (slug: string) => `vj:seen:${slug}`;
 
 function readSeen(slug: string): number {
@@ -16,7 +18,7 @@ function readSeen(slug: string): number {
 }
 
 /**
- * কনটেস্টের ঘোষণা আর clarification। চলাকালীন প্রতি ~৩০ সেকেন্ডে আনে।
+ * কনটেস্টের ঘোষণা আর clarification। চলাকালীন প্রতি ~৬০ সেকেন্ডে আনে (ট্যাব লুকানো থাকলে না)।
  * "নতুন" = শেষবার Messages পেজ দেখার পরের ঘোষণা বা উত্তর (এই ব্রাউজারে মনে রাখা)।
  */
 export function useContestMessages(slug: string, phase: ContestPhase | null) {
@@ -35,17 +37,17 @@ export function useContestMessages(slug: string, phase: ContestPhase | null) {
 
   useEffect(() => {
     if (!phase) return;
-    let timer: ReturnType<typeof setTimeout>;
+    let cancelPoll = () => {};
     let cancelled = false;
     const tick = async () => {
       await load();
       // ১০০০ জন একসাথে যেন না চায়
-      if (!cancelled && phase === "RUNNING") timer = setTimeout(tick, POLL_MS + Math.random() * 5000);
+      if (!cancelled && phase === "RUNNING") cancelPoll = schedulePoll(tick, jitter(POLL_MS, 10_000));
     };
     void tick();
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      cancelPoll();
     };
   }, [load, phase]);
 

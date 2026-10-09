@@ -5,26 +5,36 @@ import { useEffect, useState } from "react";
 import { LANGUAGE_INFO, type ContestDetail, type SubmissionView as Submission } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { schedulePoll } from "@/lib/poll";
 import { JudgeProgressBar, VerdictBadge } from "../../verdict-badge";
 import { problemHref } from "@/components/submission-table";
 import { secondaryButtonClass } from "@/components/ui";
 
-const POLL_MS = 1000;
+// judge চলাকালীন অগ্রগতির বার নড়ে, তাই ঘনঘন; লাইনে থাকলে ধীরে ধীরে কমাই (১০০০ জনের কনটেস্টে
+// লম্বা লাইন হলে সবাই প্রতি সেকেন্ডে চাইলে সার্ভার আটকে যেত)
+const JUDGING_POLL_MS = 1500;
+const QUEUE_POLL_MS = { first: 1500, max: 5000, growth: 1.4 };
 
 export function SubmissionView({ id }: { id: string }) {
   const [sub, setSub] = useState<Submission | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // judge শেষ না হওয়া পর্যন্ত প্রতি সেকেন্ডে রিফ্রেশ
+  // judge শেষ না হওয়া পর্যন্ত রিফ্রেশ (ট্যাব লুকানো থাকলে থামে)
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
+    let cancelPoll = () => {};
     let cancelled = false;
+    let queueDelay = QUEUE_POLL_MS.first;
     const load = async () => {
       try {
         const s = await api<Submission>(`/submissions/${encodeURIComponent(id)}`);
         if (cancelled) return;
         setSub(s);
-        if (s.verdict === "PENDING" || s.verdict === "JUDGING") timer = setTimeout(load, POLL_MS);
+        if (s.verdict === "JUDGING") {
+          cancelPoll = schedulePoll(load, JUDGING_POLL_MS);
+        } else if (s.verdict === "PENDING") {
+          cancelPoll = schedulePoll(load, queueDelay);
+          queueDelay = Math.min(queueDelay * QUEUE_POLL_MS.growth, QUEUE_POLL_MS.max);
+        }
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       }
@@ -32,7 +42,7 @@ export function SubmissionView({ id }: { id: string }) {
     load();
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      cancelPoll();
     };
   }, [id]);
 

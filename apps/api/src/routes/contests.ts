@@ -187,6 +187,42 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
 
 type SlugParams = { Params: { slug: string } };
 
+// কনটেস্টে ১০০০ জন A/B/C-র মধ্যে বারবার যায় — প্রতিবার DB থেকে স্টেটমেন্ট আর sample না এনে
+// ৩০ সেকেন্ড মনে রাখি (একসাথে অনেকে চাইলে একটাই query)। author স্টেটমেন্ট ঠিক করলে ≤৩০ সে. পরে দেখায়।
+const PROBLEM_TTL_MS = 30_000;
+type ProblemBody = Omit<ContestProblemView, "label" | "contest">;
+const problemCache = new Map<string, { at: number; value: Promise<ProblemBody> }>();
+
+function problemBody(problemId: string): Promise<ProblemBody> {
+  const hit = problemCache.get(problemId);
+  if (hit && Date.now() - hit.at < PROBLEM_TTL_MS) return hit.value;
+  const value = prisma!.problem
+    .findUniqueOrThrow({
+      where: { id: problemId },
+      include: { tests: { where: { isSample: true }, orderBy: { ordinal: "asc" } } },
+    })
+    .then((problem) => ({
+      id: problem.id,
+      slug: problem.slug,
+      title: problem.title,
+      visibility: problem.visibility,
+      statement: problem.statement,
+      timeLimitMs: problem.timeLimitMs,
+      memoryLimitKb: problem.memoryLimitKb,
+      samples: problem.tests.map((t) => ({
+        input: Buffer.from(t.input).toString("utf8"),
+        answer: Buffer.from(t.answer).toString("utf8"),
+      })),
+    }))
+    .catch((err) => {
+      problemCache.delete(problemId);
+      throw err;
+    });
+  if (problemCache.size > 500) problemCache.clear();
+  problemCache.set(problemId, { at: Date.now(), value });
+  return value;
+}
+
 /** প্রবলেম কেন দেখা যাচ্ছে না — WINDOW-এ নিজের ঘড়ি অনুযায়ী */
 function noProblemsReason(access: ContestAccess, fallback: string): string {
   if (access.phase === "UPCOMING") return "The contest hasn't started yet";
@@ -575,22 +611,8 @@ export async function contestRoutes(app: FastifyInstance) {
     const cp = contest.problems.find((p) => p.label === req.params.label.toUpperCase());
     if (!cp) return reply.code(404).send({ error: "Problem not found" });
 
-    const problem = await prisma!.problem.findUniqueOrThrow({
-      where: { id: cp.problem.id },
-      include: { tests: { where: { isSample: true }, orderBy: { ordinal: "asc" } } },
-    });
     const view: ContestProblemView = {
-      id: problem.id,
-      slug: problem.slug,
-      title: problem.title,
-      visibility: problem.visibility,
-      statement: problem.statement,
-      timeLimitMs: problem.timeLimitMs,
-      memoryLimitKb: problem.memoryLimitKb,
-      samples: problem.tests.map((t) => ({
-        input: Buffer.from(t.input).toString("utf8"),
-        answer: Buffer.from(t.answer).toString("utf8"),
-      })),
+      ...(await problemBody(cp.problem.id)),
       label: cp.label,
       contest: { slug: contest.slug, title: contest.title, phase: access.phase },
     };

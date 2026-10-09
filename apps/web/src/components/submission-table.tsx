@@ -5,10 +5,12 @@ import { useCallback, useEffect, useState } from "react";
 import { LANGUAGE_INFO, type SubmissionPage, type SubmissionRow } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { VerdictBadge } from "@/app/verdict-badge";
+import { schedulePoll } from "@/lib/poll";
 import { secondaryButtonClass } from "./ui";
 
-// কোনো সাবমিশন judge হতে থাকলে এত পরপর প্রথম পাতা রিফ্রেশ হয়
-const POLL_MS = 2000;
+// কোনো সাবমিশন judge হতে থাকলে এত পরপর প্রথম পাতা রিফ্রেশ হয়; শুধু লাইনে থাকলে আরও ধীরে
+const JUDGING_POLL_MS = 3000;
+const QUEUE_POLL_MS = 5000;
 
 /**
  * সাবমিশনের তালিকা। `query` যেমন "mine=true&problem=aplusb"।
@@ -48,13 +50,14 @@ export function SubmissionTable({
     setRows(null);
     setNextCursor(null);
     setError(null);
-    let timer: ReturnType<typeof setTimeout>;
+    let cancelPoll = () => {};
     let cancelled = false;
     const tick = async () => {
       try {
         const first = await loadFirst();
         if (cancelled) return;
-        if (first.some((s) => s.verdict === "PENDING" || s.verdict === "JUDGING")) timer = setTimeout(tick, POLL_MS);
+        if (first.some((s) => s.verdict === "JUDGING")) cancelPoll = schedulePoll(tick, JUDGING_POLL_MS);
+        else if (first.some((s) => s.verdict === "PENDING")) cancelPoll = schedulePoll(tick, QUEUE_POLL_MS);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       }
@@ -62,7 +65,7 @@ export function SubmissionTable({
     void tick();
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      cancelPoll();
     };
   }, [loadFirst, refreshKey]);
 

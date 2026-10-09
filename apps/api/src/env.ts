@@ -14,8 +14,14 @@ const publicWebUrl = (process.env.PUBLIC_WEB_URL?.trim() || webOrigins[0] || "ht
   "",
 );
 
+// Render নিজে RENDER=true দেয়
+const production = process.env.NODE_ENV === "production" || process.env.RENDER === "true";
+
 export const env = {
   port: Number(process.env.PORT ?? 4000),
+  // Production-এ প্রতি request-এর লগ (দুটো করে JSON লাইন) বন্ধ — ০.১ CPU-তে এটাই অনেক খরচ।
+  // ভুল (error) আর সতর্কতা (warn) তবু লগ হয়। কিছু খুঁজতে হলে Render-এ LOG_LEVEL=info দাও।
+  logLevel: process.env.LOG_LEVEL?.trim() || (production ? "warn" : "info"),
   host: process.env.HOST ?? "0.0.0.0",
   databaseUrl: process.env.DATABASE_URL || undefined,
   webOrigins,

@@ -6,10 +6,11 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ContestHeader } from "../contest-header";
 import { useContest } from "../use-contest";
+import { jitter, schedulePoll } from "@/lib/poll";
 import { inputClass, secondaryButtonClass } from "@/components/ui";
 
-// চলাকালীন এত পরপর রিফ্রেশ (সার্ভারে ১০ সেকেন্ডের cache আছে)
-const REFRESH_MS = 30_000;
+// চলাকালীন এত পরপর রিফ্রেশ (সার্ভারে ১০ সেকেন্ডের cache আছে); ১০০০ জনে প্রতি সেকেন্ডে ~১৫টা request
+const REFRESH_MS = 60_000;
 
 export function Standings({ slug }: { slug: string }) {
   const { contest, phase, personal, now, error: contestError } = useContest(slug);
@@ -49,7 +50,7 @@ export function Standings({ slug }: { slug: string }) {
 
   useEffect(() => {
     if (!phase) return;
-    let timer: ReturnType<typeof setTimeout>;
+    let cancelPoll = () => {};
     let cancelled = false;
     const load = async () => {
       try {
@@ -60,15 +61,15 @@ export function Standings({ slug }: { slug: string }) {
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       }
-      // ১০০০ জন একসাথে যেন না চায় — প্রতিবার ০-৫ সেকেন্ড এলোমেলো দেরি
+      // ১০০০ জন একসাথে যেন না চায় — প্রতিবার ০-১০ সেকেন্ড এলোমেলো দেরি; ট্যাব লুকানো থাকলে না
       if (!cancelled && (phase === "RUNNING" || personal === "RUNNING")) {
-        timer = setTimeout(load, REFRESH_MS + Math.random() * 5000);
+        cancelPoll = schedulePoll(load, jitter(REFRESH_MS, 10_000));
       }
     };
     void load();
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      cancelPoll();
     };
   }, [slug, phase, personal]);
 
@@ -198,7 +199,7 @@ export function Standings({ slug }: { slug: string }) {
           )}
           <p className="text-xs text-zinc-500">
             Updated {new Date(data.generatedAt).toLocaleTimeString()}
-            {phase === "RUNNING" && " · refreshes every 30 seconds"}
+            {phase === "RUNNING" && " · refreshes every minute"}
             {data.scoring === "ICPC" && " · penalty = solve minute + wrong submissions × penalty (compile errors are free)"}
           </p>
         </>

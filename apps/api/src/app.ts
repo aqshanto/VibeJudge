@@ -19,7 +19,12 @@ import { userRoutes } from "./routes/users.js";
 
 export async function buildApp() {
   // Vercel আর Render দুটোই proxy — আসল ইউজারের IP X-Forwarded-For-এ থাকে
-  const app = Fastify({ logger: true, trustProxy: true });
+  const app = Fastify({
+    logger: { level: env.logLevel },
+    // "incoming request"/"request completed" লাইন শুধু info লেভেলে (production-এ বন্ধ)
+    disableRequestLogging: env.logLevel !== "info" && env.logLevel !== "debug" && env.logLevel !== "trace",
+    trustProxy: true,
+  });
 
   // Web সাধারণত Vercel rewrite দিয়ে একই ডোমেইন থেকে আসবে, তবু সরাসরি কলের জন্য CORS রাখা হলো।
   await app.register(cors, { origin: env.webOrigins, credentials: true });
