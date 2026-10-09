@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { SubmissionView as Submission } from "@vibejudge/shared";
+import type { ContestDetail, SubmissionView as Submission } from "@vibejudge/shared";
 import { api } from "@/lib/api";
-import { VerdictBadge } from "../../verdict-badge";
+import { useAuth } from "@/lib/auth";
+import { JudgeProgressBar, VerdictBadge } from "../../verdict-badge";
 import { problemHref } from "@/components/submission-table";
+import { secondaryButtonClass } from "@/components/ui";
 
 const POLL_MS = 1000;
 
@@ -60,9 +62,10 @@ export function SubmissionView({ id }: { id: string }) {
           )}
           · {sub.language.toUpperCase()}
         </p>
+        {!done && <JudgeProgressBar verdict={sub.verdict} progress={sub.progress} queuePosition={sub.queuePosition} />}
         <div className="flex flex-wrap items-center gap-4">
           <span className="text-2xl">
-            <VerdictBadge verdict={sub.verdict} full />
+            <VerdictBadge verdict={sub.verdict} full progress={sub.progress} queuePosition={sub.queuePosition} />
           </span>
           {done && sub.verdict !== "CE" && (
             <span className="text-sm text-zinc-600 dark:text-zinc-400">
@@ -72,6 +75,8 @@ export function SubmissionView({ id }: { id: string }) {
           {done && sub.score !== null && <span className="text-lg font-semibold">{sub.score} / 100</span>}
         </div>
       </header>
+
+      <NextSteps sub={sub} />
 
       {sub.compileOutput && (
         <section>
@@ -128,4 +133,44 @@ export function SubmissionView({ id }: { id: string }) {
 
 function formatMemory(kb: number): string {
   return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
+}
+
+/** সাবমিটের পরে কোথায় যাবে: প্রবলেমে ফেরা, পরের প্রবলেম, নিজের সাবমিশন, standings */
+function NextSteps({ sub }: { sub: Submission }) {
+  const { user } = useAuth();
+  const [labels, setLabels] = useState<string[]>([]);
+  const contestSlug = sub.contest?.slug;
+
+  // কনটেস্টে "পরের প্রবলেম" বের করতে প্রবলেমের লেবেলগুলো লাগে
+  useEffect(() => {
+    if (!contestSlug) return;
+    api<ContestDetail>(`/contests/${encodeURIComponent(contestSlug)}`).then(
+      (c) => setLabels(c.problems.map((p) => p.label)),
+      () => {},
+    );
+  }, [contestSlug]);
+
+  const mine = user !== null && user.username === sub.user?.username;
+  const links: { href: string; label: string }[] = [];
+  if (sub.contest) {
+    const next = labels[labels.indexOf(sub.contest.label) + 1];
+    links.push({ href: problemHref(sub), label: `← Problem ${sub.contest.label}` });
+    if (next) links.push({ href: `/contests/${sub.contest.slug}/problems/${next}`, label: `Next: problem ${next} →` });
+    if (mine) links.push({ href: `/contests/${sub.contest.slug}#my-submissions`, label: "My submissions" });
+    links.push({ href: `/contests/${sub.contest.slug}/standings`, label: "Standings" });
+  } else {
+    links.push({ href: problemHref(sub), label: "← Back to the problem" });
+    if (mine) links.push({ href: "/submissions?mine=1", label: "My submissions" });
+    links.push({ href: "/problems", label: "All problems" });
+  }
+
+  return (
+    <nav className="flex flex-wrap gap-2">
+      {links.map((l) => (
+        <Link key={l.href} href={l.href} className={`${secondaryButtonClass} px-3 py-1.5`}>
+          {l.label}
+        </Link>
+      ))}
+    </nav>
+  );
 }

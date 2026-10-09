@@ -5,7 +5,7 @@
 // (Neon-এর ফ্রি compute ঘণ্টা বাঁচে)।
 
 import { randomBytes } from "node:crypto";
-import type { JudgeJob, Language } from "@vibejudge/shared";
+import type { JudgeJob, JudgeProgress, Language } from "@vibejudge/shared";
 import { prisma } from "./db.js";
 
 /** এর বেশি সময় JUDGING থাকলে ধরে নিই worker মরে গেছে — অন্য worker আবার নেবে */
@@ -37,6 +37,36 @@ function waitForWork(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+// ---------- judge চলাকালীন অগ্রগতি ----------
+// শুধু memory-তে (DB-তে লিখলে ১০০০ জনের কনটেস্টে প্রতি টেস্টে একটা করে write হত)।
+// API restart হলে হারায় — তখন UI শুধু "Judging…" দেখায়, verdict-এ কোনো প্রভাব নেই।
+
+const active = new Map<string, { token: string; progress: JudgeProgress | null; at: number }>();
+
+/** worker-এর পাঠানো অগ্রগতি; টোকেন না মিললে false */
+export function setProgress(submissionId: string, token: string, progress: JudgeProgress): boolean {
+  const entry = active.get(submissionId);
+  if (!entry || entry.token !== token) return false;
+  entry.progress = progress;
+  entry.at = Date.now();
+  return true;
+}
+
+export function getProgress(submissionId: string): JudgeProgress | null {
+  return active.get(submissionId)?.progress ?? null;
+}
+
+/** রেজাল্ট এলে বা claim বাতিল হলে */
+export function clearProgress(submissionId: string): void {
+  active.delete(submissionId);
+}
+
+// worker মরে গেলে entry যেন জমে না থাকে
+setInterval(() => {
+  const cutoff = Date.now() - CLAIM_TIMEOUT_MS;
+  for (const [id, entry] of active) if (entry.at < cutoff) active.delete(id);
+}, 60_000).unref();
+
 export async function claimJob(workerName: string, waitMs: number, signal: AbortSignal): Promise<JudgeJob | null> {
   const deadline = Date.now() + waitMs;
   for (;;) {
@@ -47,6 +77,7 @@ export async function claimJob(workerName: string, waitMs: number, signal: Abort
       if (job) {
         // timeout পার হলে আবার খুঁজতে হবে (যদি এই worker রেজাল্ট না পাঠায়)
         setTimeout(notifyWork, CLAIM_TIMEOUT_MS + 1000).unref();
+        active.set(job.submissionId, { token: job.claimToken, progress: null, at: Date.now() });
         return job;
       }
       if (epoch === seen) hint = false;

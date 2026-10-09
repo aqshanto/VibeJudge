@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ContestDetail } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -14,7 +14,15 @@ import { useContest } from "./use-contest";
 
 export function ContestOverview({ slug }: { slug: string }) {
   const { contest, error, phase, now, reload } = useContest(slug);
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const loaded = contest !== null && !loading;
+
+  // "#my-submissions" লিংকে এলে — ডেটা আসার আগে সেকশনটা থাকে না, তাই লোড হলে নিজে স্ক্রল করি
+  useEffect(() => {
+    if (loaded && window.location.hash === "#my-submissions") {
+      document.getElementById("my-submissions")?.scrollIntoView();
+    }
+  }, [loaded]);
 
   if (error) return <p className="text-red-600">Could not load contest: {error}</p>;
   if (!contest || !phase) return <p className="text-zinc-500">Loading…</p>;
@@ -76,7 +84,7 @@ export function ContestOverview({ slug }: { slug: string }) {
       )}
 
       {user && (contest.viewer.registered || contest.viewer.canManage || phase === "ENDED") && (
-        <section className="flex flex-col gap-3">
+        <section id="my-submissions" className="flex scroll-mt-6 flex-col gap-3">
           <h2 className="text-lg font-semibold">My submissions</h2>
           <SubmissionTable
             query={`mine=true&contest=${encodeURIComponent(contest.slug)}&limit=50`}

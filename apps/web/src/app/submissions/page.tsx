@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { SubmissionTable } from "@/components/submission-table";
 
 export default function SubmissionsPage() {
   const { user } = useAuth();
   const [mine, setMine] = useState(false);
+
+  // "/submissions?mine=1" (সাবমিশন পেজের "My submissions" বাটন) → সরাসরি "Mine" ট্যাব
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("mine") === "1") setMine(true);
+  }, []);
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">

@@ -1,6 +1,6 @@
 // API-র সাথে কথা বলার client (শুধু /api/judge/* endpoint)
 
-import type { JudgeJob, JudgeReport, ProblemData } from "@vibejudge/shared";
+import type { JudgeJob, JudgeProgressReport, JudgeReport, ProblemData } from "@vibejudge/shared";
 
 export class JudgeApi {
   constructor(
@@ -38,6 +38,15 @@ export class JudgeApi {
       signal: AbortSignal.timeout(120_000),
     });
     return (await res.json()) as ProblemData;
+  }
+
+  /** অগ্রগতি জানানো — ব্যর্থ হলেও judge থামে না (শুধু UI-র জন্য) */
+  async progress(submissionId: string, body: JudgeProgressReport): Promise<void> {
+    await this.request(`/submissions/${encodeURIComponent(submissionId)}/progress`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => {});
   }
 
   async report(submissionId: string, report: JudgeReport): Promise<void> {

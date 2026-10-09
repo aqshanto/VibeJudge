@@ -73,6 +73,19 @@ export interface TestResult {
   message?: string;
 }
 
+/** judge চলাকালীন অগ্রগতি (শুধু API-র memory-তে থাকে, DB-তে না) */
+export interface JudgeProgress {
+  phase: "compiling" | "running";
+  /** কয়টা টেস্ট শেষ */
+  done: number;
+  total: number;
+}
+
+/** POST /api/judge/submissions/:id/progress */
+export interface JudgeProgressReport extends JudgeProgress {
+  claimToken: string;
+}
+
 /** POST /api/judge/submissions/:id/result */
 export interface JudgeReport {
   claimToken: string;
@@ -101,6 +114,10 @@ export interface SubmissionView {
   contest: { slug: string; label: string; inContest: boolean } | null;
   /** IOI নম্বর (০-১০০) */
   score: number | null;
+  /** JUDGING হলে worker-এর জানানো অগ্রগতি (পুরোনো worker হলে null) */
+  progress: JudgeProgress | null;
+  /** PENDING হলে লাইনে কততম (১ = পরেরটাই এটা) */
+  queuePosition: number | null;
   createdAt: string;
   judgedAt: string | null;
 }
@@ -118,6 +135,8 @@ export interface SubmissionRow {
   contest: { slug: string; label: string; inContest: boolean } | null;
   /** IOI নম্বর (০-১০০) */
   score: number | null;
+  /** JUDGING হলে worker-এর জানানো অগ্রগতি (পুরোনো worker হলে null) */
+  progress: JudgeProgress | null;
   createdAt: string;
 }
 
@@ -141,8 +160,11 @@ export interface ProblemView {
 
 // ---------- Auth ----------
 
-/** a-z, 0-9, _ . - ; ৩-২০ অক্ষর; সবসময় lowercase */
-export const USERNAME_PATTERN = "^[a-z0-9_.-]{3,20}$";
+/**
+ * a-z, 0-9, _ . - ; ৩-২০ অক্ষর; সবসময় lowercase।
+ * "-" escape করা — ব্রাউজার HTML `pattern` "v" flag দিয়ে পড়ে, সেখানে খালি "-" অবৈধ।
+ */
+export const USERNAME_PATTERN = "^[a-z0-9_.\\-]{3,20}$";
 export const PASSWORD_MIN_LENGTH = 8;
 
 export interface AuthUser {
@@ -176,7 +198,7 @@ export const VISIBILITIES = ["PRIVATE", "CONTEST", "PUBLIC"] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
 
 /** ছোট হাতের অক্ষর, সংখ্যা আর "-"; ৩-৪০ অক্ষর */
-export const SLUG_PATTERN = "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$";
+export const SLUG_PATTERN = "^[a-z0-9][a-z0-9\\-]{1,38}[a-z0-9]$";
 /** Vercel-এর ভেতর দিয়ে একবারে পাঠানো যায় এমন সীমা (base64-সহ ~৩.৪ MB) */
 export const MAX_TEST_FILE_BYTES = 2.5 * 1024 * 1024;
 /** একটা প্রবলেমের সব টেস্ট মিলিয়ে (DB-তে থাকে, তাই আপাতত ছোট) */

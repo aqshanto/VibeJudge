@@ -77,3 +77,15 @@ body {
   .statement th,
   .statement td { border-color: rgb(255 255 255 / 0.2); }
 }
+
+/* judge-এর অগ্রগতি জানা না থাকলে (লাইনে বা compile-এ) চলমান ডোরা */
+@keyframes vj-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.vj-indeterminate {
+  animation: vj-indeterminate 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vj-indeterminate { animation: none; width: 100%; opacity: 0.4; }
+}

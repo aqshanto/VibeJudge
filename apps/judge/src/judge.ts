@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { FinalVerdict, Language, TestResult } from "@vibejudge/shared";
+import type { FinalVerdict, JudgeProgress, Language, TestResult } from "@vibejudge/shared";
 import { Box, type RunResult } from "./isolate.js";
 import { CHECKER_COMPILE, LANGUAGES } from "./languages.js";
 import { compareTokens } from "./compare.js";
@@ -41,6 +41,8 @@ export interface JudgeOptions {
   boxId: number;
   /** প্রথম ভুল টেস্টে থামবে (ICPC); false হলে সব টেস্ট চলবে (IOI) */
   stopOnFirstFailure?: boolean;
+  /** compile শুরু আর প্রতিটা টেস্ট শেষে ডাকা হয় (UI-তে "Running test 3 of 10") */
+  onProgress?: (progress: JudgeProgress) => void;
 }
 
 const COMPILE_LIMITS = {
@@ -66,6 +68,7 @@ export async function judge(problem: ProblemSpec, submission: Submission, opts: 
   let box: Box | undefined;
   try {
     // ---- 1. Compile ----
+    opts.onProgress?.({ phase: "compiling", done: 0, total: problem.tests.length });
     await writeFile(join(compileBox.dir, lang.sourceFile), submission.source);
     const compile = await compileBox.run(lang.compile, {
       limits: COMPILE_LIMITS,
@@ -83,10 +86,12 @@ export async function judge(problem: ProblemSpec, submission: Submission, opts: 
     await copyFile(join(compileBox.dir, "main"), join(box.dir, "main"));
 
     // ---- 2. প্রতিটা টেস্ট চালানো ----
+    opts.onProgress?.({ phase: "running", done: 0, total: problem.tests.length });
     const results: TestResult[] = [];
     for (const test of problem.tests) {
       const result = await runTest(box, problem, lang.run, test);
       results.push(result);
+      opts.onProgress?.({ phase: "running", done: results.length, total: problem.tests.length });
       if (result.verdict !== "AC" && opts.stopOnFirstFailure !== false) break;
     }
 

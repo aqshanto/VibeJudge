@@ -2,10 +2,10 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { VERDICTS, type JudgeReport, type ProblemData } from "@vibejudge/shared";
+import { VERDICTS, type JudgeProgressReport, type JudgeReport, type ProblemData } from "@vibejudge/shared";
 import { prisma } from "../db.js";
 import { env } from "../env.js";
-import { claimJob } from "../queue.js";
+import { claimJob, clearProgress, setProgress } from "../queue.js";
 
 const FINAL_VERDICTS = VERDICTS.filter((v) => v !== "PENDING" && v !== "JUDGING");
 const MAX_WAIT_MS = 25_000;
@@ -71,6 +71,31 @@ export async function judgeRoutes(app: FastifyInstance) {
     return data;
   });
 
+  // judge চলাকালীন অগ্রগতি — memory-তে রাখি, DB ছুঁই না (worker সেকেন্ডে একবারের বেশি পাঠায় না)
+  app.post<{ Params: { id: string }; Body: JudgeProgressReport }>(
+    "/submissions/:id/progress",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["claimToken", "phase", "done", "total"],
+          properties: {
+            claimToken: { type: "string", maxLength: 100 },
+            phase: { type: "string", enum: ["compiling", "running"] },
+            done: { type: "integer", minimum: 0, maximum: 10_000 },
+            total: { type: "integer", minimum: 0, maximum: 10_000 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { claimToken, phase, done, total } = req.body;
+      // টোকেন না মিললেও (যেমন API restart হয়েছে) চুপচাপ 204 — অগ্রগতি না দেখানো verdict-এর চেয়ে কম জরুরি
+      setProgress(req.params.id, claimToken, { phase, done: Math.min(done, total), total });
+      return reply.code(204).send();
+    },
+  );
+
   app.post<{ Params: { id: string }; Body: JudgeReport }>(
     "/submissions/:id/result",
     {
@@ -116,6 +141,7 @@ export async function judgeRoutes(app: FastifyInstance) {
           judgedAt: new Date(),
         },
       });
+      clearProgress(req.params.id);
       if (updated.count === 0) return reply.code(409).send({ error: "Submission is not claimed by this token" });
       req.log.info({ submissionId: req.params.id, verdict: r.verdict }, "submission judged");
       return { ok: true };

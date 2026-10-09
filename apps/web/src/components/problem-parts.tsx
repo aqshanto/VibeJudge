@@ -159,7 +159,7 @@ export function SubmitForm({
         </select>
       </div>
       {note}
-      <CodeEditor value={source} onChange={changeSource} language={language} />
+      <CodeEditor value={source} onChange={changeSource} language={language} modelId={draftId} />
       {tooLarge && <p className="text-sm text-red-600">Code is larger than {MAX_SOURCE_BYTES / 1024} KB.</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button type="submit" disabled={submitting || !source.trim() || tooLarge} className={`${buttonClass} self-start`}>

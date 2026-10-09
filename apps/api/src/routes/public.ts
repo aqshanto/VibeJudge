@@ -13,7 +13,7 @@ import {
 } from "@vibejudge/shared";
 import type { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../db.js";
-import { notifyWork } from "../queue.js";
+import { getProgress, notifyWork } from "../queue.js";
 import { requireUser } from "../auth/guards.js";
 import { SESSION_COOKIE, getSessionUser } from "../auth/session.js";
 
@@ -214,6 +214,7 @@ export async function publicRoutes(app: FastifyInstance) {
           memoryKb: s.memoryKb,
           contest: contestRef(s, labels),
           score: s.score,
+          progress: s.verdict === "JUDGING" ? getProgress(s.id) : null,
           createdAt: s.createdAt.toISOString(),
         })),
         nextCursor: rows.length > limit ? rows[limit - 1]!.id : null,
@@ -252,6 +253,12 @@ export async function publicRoutes(app: FastifyInstance) {
       tests: (s.testResults as TestResult[] | null) ?? [],
       contest: contestRef(s, labels),
       score: s.score,
+      progress: s.verdict === "JUDGING" ? getProgress(s.id) : null,
+      // লাইনে কততম — শুধু PENDING হলে (index: verdict + createdAt)
+      queuePosition:
+        s.verdict === "PENDING"
+          ? (await prisma!.submission.count({ where: { verdict: "PENDING", createdAt: { lt: s.createdAt } } })) + 1
+          : null,
       createdAt: s.createdAt.toISOString(),
       judgedAt: s.judgedAt?.toISOString() ?? null,
     };

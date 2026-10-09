@@ -8,7 +8,7 @@
 //   DATA_DIR      টেস্ট ডাটার cache (ডিফল্ট: /var/lib/vibejudge)
 
 import { availableParallelism, hostname } from "node:os";
-import type { JudgeJob, JudgeReport } from "@vibejudge/shared";
+import type { JudgeJob, JudgeProgress, JudgeReport } from "@vibejudge/shared";
 import { JudgeApi } from "./api.js";
 import { judge } from "./judge.js";
 import { ProblemCache } from "./problems.js";
@@ -35,12 +35,28 @@ let stopping = false;
 const log = (slot: number, msg: string) => console.log(`${new Date().toISOString()} [slot ${slot}] ${msg}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ধাপ বদলালে (compile → run) সাথে সাথে, টেস্ট চলাকালীন সর্বোচ্চ ~১ সেকেন্ডে একবার —
+// ১০০০ জনের কনটেস্টে API-তে যেন অপ্রয়োজনীয় request না যায়
+const PROGRESS_INTERVAL_MS = 1000;
+function progressReporter(job: JudgeJob) {
+  let lastPhase = "";
+  let lastSent = 0;
+  return (p: JudgeProgress) => {
+    const now = Date.now();
+    if (p.phase === lastPhase && now - lastSent < PROGRESS_INTERVAL_MS) return;
+    lastPhase = p.phase;
+    lastSent = now;
+    void api.progress(job.submissionId, { claimToken: job.claimToken, ...p });
+  };
+}
+
 async function process1(job: JudgeJob, slot: number): Promise<JudgeReport> {
   try {
     const problem = await problems.get(job.problem, slot);
     const result = await judge(problem, { language: job.language, source: job.source }, {
       boxId: slot,
       stopOnFirstFailure: !job.runAllTests,
+      onProgress: progressReporter(job),
     });
     return { claimToken: job.claimToken, ...result };
   } catch (err) {
