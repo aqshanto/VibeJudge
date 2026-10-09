@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { AuthorRequestStatus, AuthorRequestView } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { ErrorText, buttonClass, secondaryButtonClass } from "@/components/ui";
+import { useRouter } from "next/navigation";
+import { ErrorText, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import { BulkAccounts } from "./bulk-accounts";
 
 const TABS: AuthorRequestStatus[] = ["PENDING", "APPROVED", "REJECTED"];
@@ -48,6 +49,8 @@ export default function AdminPage() {
 
   return (
     <Shell>
+      <FindUser />
+
       <h2 className="mb-3 text-lg font-semibold">Author requests</h2>
       <div className="mb-4 flex gap-2">
         {TABS.map((t) => (
@@ -114,5 +117,29 @@ function Shell({ children }: { children: React.ReactNode }) {
       <h1 className="mb-6 text-2xl font-semibold">Admin</h1>
       {children}
     </main>
+  );
+}
+
+// username দিয়ে ছাত্র খুঁজে প্রোফাইলে যাওয়া (সেখানে পাসওয়ার্ড রিসেট করা যায়)
+function FindUser() {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (name.trim()) router.push(`/users/${encodeURIComponent(name.trim().toLowerCase())}`);
+      }}
+      className="mb-10 flex flex-wrap items-end gap-2"
+    >
+      <label className="flex flex-col gap-1.5 text-sm">
+        <span className="font-medium">Find a user</span>
+        <input className={`${inputClass} w-64`} value={name} onChange={(e) => setName(e.target.value)} placeholder="username or student ID" />
+      </label>
+      <button type="submit" className={secondaryButtonClass}>
+        Open profile
+      </button>
+      <span className="pb-2 text-xs text-zinc-500">Lost password? Open the profile and use “Reset password”.</span>
+    </form>
   );
 }

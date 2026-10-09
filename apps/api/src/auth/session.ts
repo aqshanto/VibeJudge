@@ -83,3 +83,15 @@ export async function getSessionUser(req: FastifyRequest): Promise<AuthUser | nu
 export function invalidateUserSessions(userId: string): void {
   for (const [id, entry] of cache) if (entry.user?.id === userId) cache.delete(id);
 }
+
+/**
+ * পাসওয়ার্ড বদলালে/রিসেট করলে: ইউজারের সব লগইন বাতিল (DB + cache)।
+ * `keep` দিলে এই request-এর session থাকে (নিজে বদলালে যেন নিজেই লগআউট না হয়)।
+ */
+export async function revokeSessions(userId: string, keep?: FastifyRequest): Promise<number> {
+  const token = keep?.cookies[SESSION_COOKIE];
+  const keepId = token ? hashToken(token) : undefined;
+  const res = await prisma!.session.deleteMany({ where: { userId, ...(keepId ? { id: { not: keepId } } : {}) } });
+  for (const [id, entry] of cache) if (entry.user?.id === userId && id !== keepId) cache.delete(id);
+  return res.count;
+}

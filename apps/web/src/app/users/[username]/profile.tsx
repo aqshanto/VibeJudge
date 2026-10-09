@@ -9,8 +9,11 @@ import { formatDateTime } from "@/lib/time";
 import { ErrorText, Field, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import { SubmissionTable } from "@/components/submission-table";
 import { PhaseBadge } from "../../contests/phase-badge";
+import { Heatmap } from "./heatmap";
+import { AdminResetPassword, ChangePassword } from "./password-forms";
 
 export function Profile({ username }: { username: string }) {
+  const { user: viewer } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -60,11 +63,16 @@ export function Profile({ username }: { username: string }) {
         />
       )}
 
+      {profile.isMe && profile.hasPassword !== null && <ChangePassword hasPassword={profile.hasPassword} />}
+      {!profile.isMe && viewer?.role === "ADMIN" && <AdminResetPassword username={profile.username} />}
+
       <dl className="grid grid-cols-3 gap-4 text-center">
         <Stat label="Problems solved" value={profile.stats.solved} />
         <Stat label="Submissions" value={profile.stats.submissions} />
         <Stat label="Accepted" value={profile.stats.accepted} />
       </dl>
+
+      <Heatmap activity={profile.activity} />
 
       {profile.solvedProblems.length > 0 && (
         <section>

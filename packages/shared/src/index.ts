@@ -446,7 +446,21 @@ export interface UserProfile {
   participatedContests: ContestSummary[];
   /** নিজের প্রোফাইল হলে true (এডিট করা যায়) */
   isMe: boolean;
+  /** পাসওয়ার্ড আছে কি না (শুধু Google অ্যাকাউন্টে false) — শুধু নিজে বা admin দেখলে */
+  hasPassword: boolean | null;
+  /** গত ~১ বছরের প্রতিদিনের সাবমিশন (বাংলাদেশ সময়ে, শুধু যেদিন কিছু আছে) */
+  activity: ActivityDay[];
 }
+
+export interface ActivityDay {
+  /** "YYYY-MM-DD" */
+  date: string;
+  submissions: number;
+  accepted: number;
+}
+
+/** কোন সময় অঞ্চলে "দিন" ধরা হয় (heatmap) */
+export const DISPLAY_TIME_ZONE = "Asia/Dhaka";
 
 export interface ProfileUpdate {
   displayName?: string;
