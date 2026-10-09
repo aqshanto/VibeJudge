@@ -16,6 +16,8 @@ import { prisma } from "../db.js";
 import { getProgress, notifyWork } from "../queue.js";
 import { requireUser } from "../auth/guards.js";
 import { SESSION_COOKIE, getSessionUser } from "../auth/session.js";
+import { loadContestCached } from "../contest-access.js";
+import { teammatesOf } from "../teammates.js";
 
 /** PUBLIC সবাই দেখে; PRIVATE/CONTEST শুধু তার author আর admin (প্রকাশের আগে যাচাইয়ের জন্য) */
 function visibleProblem(slug: string, viewer: AuthUser | null): Prisma.ProblemWhereInput {
@@ -48,6 +50,22 @@ export function visibleSubmissions(viewer: AuthUser | null): Prisma.SubmissionWh
       { contest: { authorId: viewer.id } },
     ],
   };
+}
+
+/** এই কনটেস্টে দর্শকের টিম (একক কনটেস্ট বা টিম না থাকলে null) */
+async function teamInContest(viewerId: string, contestSlug: string) {
+  const contest = await loadContestCached(contestSlug);
+  if (!contest?.teamSize) return null;
+  return (await teammatesOf(viewerId)).find((m) => m.contestId === contest.id) ?? null;
+}
+
+/** visibleSubmissions + team contest-এ সতীর্থদের সাবমিশন (চলাকালীনও) */
+async function visibleSubmissionsWithTeam(viewer: AuthUser | null): Promise<Prisma.SubmissionWhereInput> {
+  const base = visibleSubmissions(viewer);
+  if (!viewer || viewer.role === "ADMIN") return base;
+  const mates = await teammatesOf(viewer.id);
+  if (mates.length === 0) return base;
+  return { OR: [...(base.OR ?? []), ...mates.map((m) => ({ contestId: m.contestId, userId: { in: m.userIds } }))] };
 }
 
 /** সাবমিশনগুলোর কনটেস্ট-লেবেল ("A", "B" …) খুঁজে বের করে */
@@ -171,10 +189,12 @@ export async function publicRoutes(app: FastifyInstance) {
       if (q.mine && !viewer) return reply.code(401).send({ error: "Please log in first" });
       const limit = q.limit ?? 50;
 
+      // কনটেস্টের "My submissions": team contest-এ পুরো টিমের
+      const team = q.mine && q.contest ? await teamInContest(viewer!.id, q.contest) : null;
       const where: Prisma.SubmissionWhereInput = {
         AND: [
-          visibleSubmissions(viewer),
-          q.mine ? { userId: viewer!.id } : {},
+          await visibleSubmissionsWithTeam(viewer),
+          q.mine ? { userId: team ? { in: team.userIds } : viewer!.id } : {},
           q.user ? { user: { username: q.user.toLowerCase() } } : {},
           q.problem ? { problem: { slug: q.problem } } : {},
           q.contest ? { contest: { slug: q.contest } } : {},
@@ -227,7 +247,7 @@ export async function publicRoutes(app: FastifyInstance) {
     const viewer = await getSessionUser(req);
     // Private প্রবলেমের সাবমিশন (এমনকি verdict আর প্রবলেমের নামও) বাইরের কেউ দেখবে না
     const s = await prisma!.submission.findFirst({
-      where: { AND: [{ id: req.params.id }, visibleSubmissions(viewer)] },
+      where: { AND: [{ id: req.params.id }, await visibleSubmissionsWithTeam(viewer)] },
       include: {
         problem: { select: { slug: true, title: true, authorId: true } },
         user: { select: { username: true } },
@@ -239,7 +259,11 @@ export async function publicRoutes(app: FastifyInstance) {
     const labels = await contestLabels([s]);
 
     // সোর্স কোড আর compiler output শুধু নিজের (বা Admin) — অন্যরা শুধু verdict দেখবে
-    const canSeeCode = viewer !== null && (viewer.id === s.userId || viewer.role === "ADMIN");
+    const teammate =
+      viewer !== null &&
+      s.contestId !== null &&
+      (await teammatesOf(viewer.id)).some((m) => m.contestId === s.contestId && m.userIds.includes(s.userId ?? ""));
+    const canSeeCode = viewer !== null && (viewer.id === s.userId || viewer.role === "ADMIN" || teammate);
     // checker-এর বার্তায় টেস্টের ইনপুট/উত্তর থাকে ("ok 9 + 1 = 10") — শুধু প্রবলেমের author আর Admin
     const canSeeCheckerMessages = viewer !== null && (viewer.id === authorId || viewer.role === "ADMIN");
     const tests = (s.testResults as TestResult[] | null) ?? [];

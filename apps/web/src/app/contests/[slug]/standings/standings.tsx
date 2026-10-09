@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { ScoringType, StandingsCell, StandingsView } from "@vibejudge/shared";
 import { api } from "@/lib/api";
@@ -164,7 +165,9 @@ export function Standings({ slug }: { slug: string }) {
                     <tr
                       key={r.username}
                       className={`border-t border-black/10 dark:border-white/10 ${
-                        r.username === user?.username ? "bg-amber-400/15" : ""
+                        r.username === user?.username || (user && r.team?.members.includes(user.username))
+                          ? "bg-amber-400/15"
+                          : ""
                       } ${r.virtual ? "text-zinc-600 dark:text-zinc-400" : ""}`}
                     >
                       <td className="px-2 py-1.5 font-medium">
@@ -173,14 +176,22 @@ export function Standings({ slug }: { slug: string }) {
                       </td>
                       <td className="px-3 py-1.5 text-left">
                         <div className="font-medium">
-                          {r.username}
+                          {r.team ? (
+                            <Link href={`/teams/${r.team.slug}`} className="hover:underline">
+                              {r.team.name}
+                            </Link>
+                          ) : (
+                            r.username
+                          )}
                           {r.virtual && (
                             <span className="ml-1.5 rounded bg-violet-500/15 px-1.5 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">
                               virtual
                             </span>
                           )}
                         </div>
-                        {(r.displayName || r.section || r.batch) && (
+                        {r.team ? (
+                          <div className="text-xs text-zinc-500">{r.team.members.join(", ")}</div>
+                        ) : (r.displayName || r.section || r.batch) && (
                           <div className="text-xs text-zinc-500">
                             {[r.displayName, r.batch && `Batch ${r.batch}`, r.section && `Sec ${r.section}`].filter(Boolean).join(" · ")}
                           </div>

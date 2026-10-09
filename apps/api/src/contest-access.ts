@@ -63,7 +63,10 @@ export function invalidateContest(...slugs: string[]): void {
 export interface ParticipationRow {
   virtual: boolean;
   startedAt: Date | null;
+  /** team contest-এ কোন টিমের হয়ে */
+  teamId: string | null;
 }
+export const PARTICIPATION_SELECT = { virtual: true, startedAt: true, teamId: true } as const;
 const participationCache = new Map<string, { at: number; row: ParticipationRow | null }>();
 const FOUND_TTL_MS = 10 * 60_000;
 const NOT_FOUND_TTL_MS = 5_000;
@@ -74,7 +77,7 @@ async function participation(contestId: string, userId: string): Promise<Partici
   if (hit && Date.now() - hit.at < (hit.row ? FOUND_TTL_MS : NOT_FOUND_TTL_MS)) return hit.row;
   const row = await prisma!.contestParticipant.findUnique({
     where: { contestId_userId: { contestId, userId } },
-    select: { virtual: true, startedAt: true },
+    select: PARTICIPATION_SELECT,
   });
   if (participationCache.size > 50_000) participationCache.clear();
   participationCache.set(key, { at: Date.now(), row });
@@ -83,6 +86,11 @@ async function participation(contestId: string, userId: string): Promise<Partici
 
 export function rememberParticipation(contestId: string, userId: string, row: ParticipationRow): void {
   participationCache.set(`${contestId}:${userId}`, { at: Date.now(), row });
+}
+
+/** টিমের একজন রেজিস্টার/Start করলে বাকি সদস্যদের পুরোনো cache যেন না থাকে */
+export function forgetParticipation(contestId: string, userIds: string[]): void {
+  for (const id of userIds) participationCache.delete(`${contestId}:${id}`);
 }
 
 export interface ContestAccess {

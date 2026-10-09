@@ -27,6 +27,9 @@ export function UserMenu() {
 
   return (
     <div className="ml-auto flex items-center gap-4">
+      <Link href="/teams" className={linkClass}>
+        Teams
+      </Link>
       {user.role !== "USER" && (
         <Link href="/author/problems" className={linkClass}>
           My problems

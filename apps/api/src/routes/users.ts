@@ -22,7 +22,7 @@ export async function userRoutes(app: FastifyInstance) {
     const seeAll = isMe || viewer?.role === "ADMIN";
     const contestFilter = seeAll ? {} : { isPublic: true };
 
-    const [solvedProblems, submissions, accepted, authored, participated, activity] = await Promise.all([
+    const [solvedProblems, submissions, accepted, authored, participated, activity, teams] = await Promise.all([
       // শুধু Public প্রবলেম — Contest/Private প্রবলেমের নাম ফাঁস হবে না
       prisma!.$queryRaw<{ slug: string; title: string }[]>`
         SELECT DISTINCT p."slug", p."title"
@@ -52,6 +52,11 @@ export async function userRoutes(app: FastifyInstance) {
         FROM "submissions"
         WHERE "userId" = ${user.id} AND "createdAt" >= now() - interval '372 days'
         GROUP BY 1 ORDER BY 1`,
+      prisma!.team.findMany({
+        where: { members: { some: { userId: user.id, accepted: true } } },
+        orderBy: { createdAt: "asc" },
+        select: { slug: true, name: true },
+      }),
     ]);
 
     const profile: UserProfile = {
@@ -66,6 +71,7 @@ export async function userRoutes(app: FastifyInstance) {
       solvedProblems,
       authoredContests: authored.map(toSummary),
       participatedContests: participated.map(toSummary),
+      teams,
       isMe,
       hasPassword: seeAll ? user.passwordHash !== null : null,
       activity,

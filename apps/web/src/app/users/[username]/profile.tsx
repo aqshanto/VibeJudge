@@ -91,6 +91,23 @@ export function Profile({ username }: { username: string }) {
         </section>
       )}
 
+      {profile.teams.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-semibold">Teams</h2>
+          <div className="flex flex-wrap gap-2">
+            {profile.teams.map((t) => (
+              <Link
+                key={t.slug}
+                href={`/teams/${t.slug}`}
+                className="rounded-md bg-violet-500/10 px-2 py-1 text-sm text-violet-800 hover:underline dark:text-violet-300"
+              >
+                {t.name}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       <ContestList title="Contests authored" contests={profile.authoredContests} empty="" />
       <ContestList title="Contests participated" contests={profile.participatedContests} empty="Hasn't joined a contest yet." />
 

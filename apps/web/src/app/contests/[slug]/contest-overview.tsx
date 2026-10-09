@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { ContestDetail, ContestPhase, PersonalState } from "@vibejudge/shared";
+import type { ContestDetail, ContestPhase, PersonalState, TeamView } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatCountdown, formatDateTime, formatDuration } from "@/lib/time";
@@ -50,6 +50,7 @@ export function ContestOverview({ slug }: { slug: string }) {
           value={contest.scoring === "ICPC" ? `ICPC · ${contest.penaltyMinutes} min penalty` : "IOI · partial points"}
         />
         <Info label="Participants" value={String(contest.participantCount)} />
+        {contest.teamSize && <Info label="Format" value={`Teams of up to ${contest.teamSize}`} />}
       </dl>
 
       {phase !== "ENDED" && !contest.viewer.registered && !contest.viewer.canManage && (
@@ -60,6 +61,16 @@ export function ContestOverview({ slug }: { slug: string }) {
           {contest.type === "WINDOW"
             ? "✓ You are registered. When the window opens, a Start button appears here — your time begins when you press it."
             : "✓ You are registered. Problems appear here when the contest starts — this page updates by itself."}
+        </p>
+      )}
+      {contest.viewer.team && (
+        <p className="rounded-md bg-black/[.04] px-3 py-2 text-sm dark:bg-white/[.06]">
+          Team{" "}
+          <Link href={`/teams/${contest.viewer.team.slug}`} className="font-medium hover:underline">
+            {contest.viewer.team.name}
+          </Link>
+          : {contest.viewer.team.members.join(", ")}
+          <span className="text-zinc-500"> — you can see each other&apos;s submissions here.</span>
         </p>
       )}
       <ParticipationBox
@@ -141,12 +152,14 @@ function ParticipationBox({
   const fullMs = contest.durationMinutes * 60_000;
   const windowLeft = new Date(contest.endsAt).getTime() - now;
 
-  async function post(path: "start" | "virtual", confirmText: string) {
+  const [team, setTeam] = useState("");
+
+  async function post(path: "start" | "virtual", confirmText: string, body?: object) {
     if (!window.confirm(confirmText)) return;
     setBusy(true);
     setError(null);
     try {
-      onChange(await api<ContestDetail>(`/contests/${contest.slug}/${path}`, { method: "POST" }));
+      onChange(await api<ContestDetail>(`/contests/${contest.slug}/${path}`, { method: "POST", body }));
     } catch (err) {
       setError((err as Error).message);
     }
@@ -215,13 +228,19 @@ function ParticipationBox({
         <p className="flex-1">
           Missed it? Take this contest <b>virtually</b>: {formatDuration(contest.durationMinutes)} on your own clock, ranked
           against the real participants. It doesn&apos;t change their standings.
+          {contest.teamSize && " Your whole team takes it together."}
         </p>
+        {contest.teamSize && <TeamSelect teamSize={contest.teamSize} value={team} onChange={setTeam} />}
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || (contest.teamSize !== null && !team)}
           className={buttonClass}
           onClick={() =>
-            post("virtual", `Start a virtual contest now? You get ${formatDuration(contest.durationMinutes)} and can do it only once.`)
+            post(
+              "virtual",
+              `Start a virtual contest now? You get ${formatDuration(contest.durationMinutes)} and can do it only once.`,
+              contest.teamSize ? { team } : undefined,
+            )
           }
         >
           {busy ? "Starting…" : "Start virtual participation"}
@@ -252,6 +271,7 @@ function RegisterBox({
   onRegistered: () => Promise<void>;
 }) {
   const [password, setPassword] = useState("");
+  const [team, setTeam] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -271,7 +291,10 @@ function RegisterBox({
     setBusy(true);
     setError(null);
     try {
-      await api(`/contests/${contest.slug}/register`, { method: "POST", body: { password } });
+      await api(`/contests/${contest.slug}/register`, {
+        method: "POST",
+        body: { password, ...(contest.teamSize ? { team } : {}) },
+      });
       await onRegistered();
     } catch (err) {
       setError((err as Error).message);
@@ -281,16 +304,81 @@ function RegisterBox({
 
   return (
     <form onSubmit={register} className="flex flex-wrap items-end gap-3 rounded-lg border border-black/10 p-4 dark:border-white/15">
+      {contest.teamSize && <TeamSelect teamSize={contest.teamSize} value={team} onChange={setTeam} />}
       {contest.hasPassword && (
         <label className="flex flex-col gap-1.5 text-sm">
           <span className="font-medium">Contest password</span>
           <input className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="off" />
         </label>
       )}
-      <button type="submit" disabled={busy} className={buttonClass}>
-        {busy ? "Registering…" : "Register"}
+      <button type="submit" disabled={busy || (contest.teamSize !== null && !team)} className={buttonClass}>
+        {busy ? "Registering…" : contest.teamSize ? "Register team" : "Register"}
       </button>
       <ErrorText>{error}</ErrorText>
     </form>
+  );
+}
+
+/**
+ * team contest-এ কোন টিম — নিজের Accept করা টিমগুলো থেকে।
+ * সদস্য বেশি হলে বাছাই করা যায় না (সার্ভারও আটকায়); টিম না থাকলে Teams পেজের লিংক।
+ */
+function TeamSelect({
+  teamSize,
+  value,
+  onChange,
+}: {
+  teamSize: number;
+  value: string;
+  onChange: (slug: string) => void;
+}) {
+  const [teams, setTeams] = useState<TeamView[] | null>(null);
+  useEffect(() => {
+    api<{ teams: TeamView[] }>("/teams/mine").then(
+      (r) => {
+        const mine = r.teams.filter((t) => t.me?.accepted);
+        setTeams(mine);
+        const fits = mine.filter((t) => t.members.filter((m) => m.accepted).length <= teamSize);
+        if (fits.length === 1) onChange(fits[0]!.slug);
+      },
+      () => setTeams([]),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamSize]);
+
+  if (teams === null) return <p className="text-sm text-zinc-500">Loading your teams…</p>;
+  if (teams.length === 0) {
+    return (
+      <p className="w-full text-sm">
+        This is a team contest (up to {teamSize} per team).{" "}
+        <Link href="/teams" className="text-sky-700 hover:underline dark:text-sky-400">
+          Create a team
+        </Link>{" "}
+        and invite your teammates first.
+      </p>
+    );
+  }
+  const selected = teams.find((t) => t.slug === value);
+  return (
+    <label className="flex flex-col gap-1.5 text-sm">
+      <span className="font-medium">Your team (up to {teamSize} members)</span>
+      <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} required>
+        <option value="">Choose a team…</option>
+        {teams.map((t) => {
+          const n = t.members.filter((m) => m.accepted).length;
+          return (
+            <option key={t.slug} value={t.slug} disabled={n > teamSize}>
+              {t.name} ({n} member{n === 1 ? "" : "s"}){n > teamSize ? " — too many" : ""}
+            </option>
+          );
+        })}
+      </select>
+      {selected && (
+        <span className="text-xs text-zinc-500">
+          Registers: {selected.members.filter((m) => m.accepted).map((m) => m.username).join(", ")}
+          {selected.members.some((m) => !m.accepted) && " (invited members who haven't accepted are left out)"}
+        </span>
+      )}
+    </label>
   );
 }

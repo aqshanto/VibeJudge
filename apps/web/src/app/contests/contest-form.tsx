@@ -8,6 +8,7 @@ import {
   LANGUAGE_INFO,
   LANGUAGES,
   SLUG_PATTERN,
+  TEAM_LIMITS,
   problemLabel,
   type AuthorProblemSummary,
   type ContestInput,
@@ -52,6 +53,8 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
   // WINDOW: জানালা কতক্ষণ খোলা (প্রত্যেকে পায় hours/minutes)
   const [winHours, setWinHours] = useState("6");
   const [winMinutes, setWinMinutes] = useState("0");
+  const [teamContest, setTeamContest] = useState(false);
+  const [teamSize, setTeamSize] = useState("3");
   const [penalty, setPenalty] = useState("20");
   const [freeze, setFreeze] = useState("0");
   const [isPublic, setIsPublic] = useState(true);
@@ -91,6 +94,8 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
       setMinutes(String(c.durationMinutes % 60));
       setScoring(c.scoring);
       setType(c.type ?? "FIXED");
+      setTeamContest(c.teamSize != null);
+      if (c.teamSize != null) setTeamSize(String(c.teamSize));
       if (c.type === "WINDOW" && c.windowMinutes) {
         setWinHours(String(Math.floor(c.windowMinutes / 60)));
         setWinMinutes(String(c.windowMinutes % 60));
@@ -132,6 +137,7 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
       scoring,
       type,
       ...(type === "WINDOW" ? { windowMinutes: Number(winHours) * 60 + Number(winMinutes) } : {}),
+      teamSize: teamContest ? Number(teamSize) : null,
       penaltyMinutes: Number(penalty),
       freezeMinutes: Number(freeze),
       isPublic,
@@ -283,6 +289,40 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
           ))}
         </div>
         <p className="text-zinc-500">After the contest ends, practice (upsolve) is open in every language.</p>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2 text-sm">
+        <legend className="mb-1.5 font-medium">Participants</legend>
+        <label className="flex flex-wrap items-center gap-2">
+          <input type="checkbox" checked={teamContest} onChange={(e) => setTeamContest(e.target.checked)} />
+          Team contest
+          {teamContest && (
+            <>
+              <span className="text-zinc-500">— at most</span>
+              <select
+                className="rounded-md border border-black/15 bg-transparent px-2 py-1 dark:border-white/20"
+                value={teamSize}
+                onChange={(e) => setTeamSize(e.target.value)}
+              >
+                {Array.from(
+                  { length: TEAM_LIMITS.contestSize.max - TEAM_LIMITS.contestSize.min + 1 },
+                  (_, i) => TEAM_LIMITS.contestSize.min + i,
+                ).map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <span className="text-zinc-500">members per team</span>
+            </>
+          )}
+        </label>
+        {teamContest && (
+          <p className="text-zinc-500">
+            Students make a team on their Teams page; any member registers the whole team. The standings show one row per
+            team, and teammates can see each other&apos;s submissions. Can&apos;t be switched once someone has registered.
+          </p>
+        )}
       </fieldset>
 
       <fieldset className="flex flex-col gap-2 text-sm">

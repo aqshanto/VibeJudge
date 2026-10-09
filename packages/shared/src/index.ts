@@ -344,8 +344,10 @@ export interface ContestSummary {
   scoring: ScoringType;
   isPublic: boolean;
   author: string | null;
-  /** virtual বাদে */
+  /** virtual বাদে (team contest-এ সদস্য গুনে) */
   participantCount: number;
+  /** null = একক; সংখ্যা = team contest, প্রতি টিমে সর্বোচ্চ এতজন */
+  teamSize: number | null;
 }
 
 export interface ContestProblemRef {
@@ -371,6 +373,8 @@ export interface ContestDetail extends ContestSummary {
     registered: boolean;
     /** author বা admin */
     canManage: boolean;
+    /** team contest-এ কোন টিমের হয়ে (রেজিস্ট্রেশনের সময়ের সদস্যরা) */
+    team: { slug: string; name: string; members: string[] } | null;
     /** রেজিস্টার করা বা virtual — না হলে null */
     participation: {
       virtual: boolean;
@@ -397,6 +401,8 @@ export interface ContestInput {
   type?: ContestType;
   /** WINDOW-এ জানালা কত মিনিট খোলা (durationMinutes-এর সমান বা বেশি) */
   windowMinutes?: number;
+  /** undefined = বদলাবে না (নতুনে একক); null = একক; সংখ্যা = team contest-এর সর্বোচ্চ সদস্য */
+  teamSize?: number | null;
   /** undefined = বদলাবে না, "" = পাসওয়ার্ড তুলে দাও */
   password?: string;
   /** undefined = নতুন কনটেস্টে C/C++, এডিটে বদলাবে না */
@@ -436,6 +442,8 @@ export interface StandingsRow {
   cells: Record<string, StandingsCell>;
   /** কনটেস্ট শেষে নিজে দেওয়া — rank আসলদের মধ্যে কোথায় পড়ত (আসলদের rank বদলায় না) */
   virtual: boolean;
+  /** team contest-এ: সারিটা টিমের (username = টিমের slug, displayName = টিমের নাম) */
+  team?: { slug: string; name: string; members: string[] };
 }
 
 /** GET /api/contests/:slug/standings */
@@ -548,6 +556,8 @@ export interface UserProfile {
   solvedProblems: { slug: string; title: string }[];
   authoredContests: ContestSummary[];
   participatedContests: ContestSummary[];
+  /** যে টিমগুলোর সদস্য (Accept করা) */
+  teams: { slug: string; name: string }[];
   /** নিজের প্রোফাইল হলে true (এডিট করা যায়) */
   isMe: boolean;
   /** পাসওয়ার্ড আছে কি না (শুধু Google অ্যাকাউন্টে false) — শুধু নিজে বা admin দেখলে */
@@ -579,4 +589,37 @@ export interface HealthResponse {
   version: string;
   time: string;
   database: "connected" | "not_checked" | "not_configured" | "error";
+}
+
+// ---------- Teams ----------
+
+export const TEAM_LIMITS = {
+  nameMax: 40,
+  /** একটা টিমে সর্বোচ্চ সদস্য (invite সহ) */
+  maxMembers: 5,
+  /** কনটেস্টে author যে সীমা দিতে পারেন */
+  contestSize: { min: 2, max: 5 },
+} as const;
+
+export type TeamRole = "OWNER" | "MEMBER";
+
+export interface TeamMemberView {
+  username: string;
+  displayName: string | null;
+  role: TeamRole;
+  /** false = invite পাঠানো হয়েছে, এখনো Accept করেনি */
+  accepted: boolean;
+}
+
+/** GET /api/teams/:slug, আর /api/teams/mine-এর প্রতিটা */
+export interface TeamView {
+  slug: string;
+  name: string;
+  createdAt: string;
+  /** invite করা (Accept না করা) সদস্য শুধু টিমের সদস্যরা দেখে */
+  members: TeamMemberView[];
+  /** দর্শক এই টিমে কী (না থাকলে null) */
+  me: { role: TeamRole; accepted: boolean } | null;
+  /** যে কনটেস্টে রেজিস্টার করেছে (তখন টিম মোছা যায় না) */
+  contests: { slug: string; title: string }[];
 }

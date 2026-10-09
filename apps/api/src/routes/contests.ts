@@ -6,6 +6,7 @@ import {
   LANGUAGE_INFO,
   MAX_SOURCE_BYTES,
   SLUG_PATTERN,
+  TEAM_LIMITS,
   problemLabel,
   type ContestDetail,
   type ContestInput,
@@ -22,11 +23,14 @@ import {
   contestAccess,
   invalidateContest,
   loadContestCached,
+  forgetParticipation,
   rememberParticipation,
+  PARTICIPATION_SELECT,
   type ContestAccess,
   type LoadedContest,
 } from "../contest-access.js";
 import { notifyWork } from "../queue.js";
+import { forgetTeammates } from "../teammates.js";
 import { cachedStandings, computeStandings } from "../standings.js";
 
 const SLUG_RE = new RegExp(SLUG_PATTERN);
@@ -71,6 +75,11 @@ const CONTEST_BODY = {
       maximum: CONTEST_LIMITS.durationMinutes.max,
     },
     password: { type: "string", maxLength: 100 },
+    teamSize: {
+      type: ["integer", "null"],
+      minimum: TEAM_LIMITS.contestSize.min,
+      maximum: TEAM_LIMITS.contestSize.max,
+    },
     // না পাঠালে: নতুন কনটেস্টে C/C++, এডিটে আগেরটাই
     languages: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", enum: [...LANGUAGES] } },
     problemSlugs: {
@@ -96,6 +105,7 @@ export function toSummary(c: LoadedContest): ContestSummary {
     isPublic: c.isPublic,
     author: c.author?.username ?? null,
     participantCount: c._count.participants,
+    teamSize: c.teamSize,
   };
 }
 
@@ -141,6 +151,7 @@ async function validateInput(
     // WINDOW-এ জানালা বন্ধ না হওয়া পর্যন্ত standings লুকানো থাকে — আলাদা freeze লাগে না
     freezeMinutes: type === "WINDOW" ? 0 : input.freezeMinutes,
     isPublic: input.isPublic,
+    ...(input.teamSize !== undefined ? { teamSize: input.teamSize } : {}),
     ...(input.languages ? { languages: LANGUAGES.filter((l) => input.languages!.includes(l)) } : {}),
     ...(input.password === undefined
       ? {}
@@ -159,9 +170,55 @@ async function setProblems(tx: Prisma.TransactionClient, contestId: string, prob
 const isUniqueViolation = (err: unknown) =>
   err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 
+/** team contest-এ দর্শকের টিম আর রেজিস্ট্রেশনের সময়ের সদস্যরা */
+async function viewerTeam(contestId: string, teamId: string | null | undefined): Promise<ContestDetail["viewer"]["team"]> {
+  if (!teamId) return null;
+  const rows = await prisma!.contestParticipant.findMany({
+    where: { contestId, teamId },
+    orderBy: { registeredAt: "asc" },
+    select: { user: { select: { username: true } }, team: { select: { slug: true, name: true } } },
+  });
+  if (!rows[0]?.team) return null;
+  return { slug: rows[0].team.slug, name: rows[0].team.name, members: rows.map((r) => r.user.username) };
+}
+
+/**
+ * team contest-এ রেজিস্ট্রেশন: টিমের Accept করা সদস্যরা (দর্শক নিজেও একজন), কেউ যেন আগে থেকে
+ * এই কনটেস্টে না থাকে (একক বা অন্য টিমে)। রেজিস্ট্রেশনের পরে টিম বদলালে কনটেস্টে কিছু বদলায় না।
+ */
+async function teamRoster(
+  contest: LoadedContest,
+  userId: string,
+  teamSlug: string | undefined,
+): Promise<{ code: number; error: string } | { teamId: string; userIds: string[] }> {
+  if (!teamSlug) return { code: 400, error: "This is a team contest — choose your team" };
+  const team = await prisma!.team.findUnique({
+    where: { slug: teamSlug },
+    select: { id: true, name: true, members: { where: { accepted: true }, select: { userId: true } } },
+  });
+  if (!team) return { code: 404, error: "Team not found" };
+  const userIds = team.members.map((m) => m.userId);
+  if (!userIds.includes(userId)) return { code: 403, error: "You are not a member of this team" };
+  if (userIds.length > contest.teamSize!) {
+    return {
+      code: 400,
+      error: `${team.name} has ${userIds.length} members — this contest allows at most ${contest.teamSize} per team`,
+    };
+  }
+  const already = await prisma!.contestParticipant.findMany({
+    where: { contestId: contest.id, userId: { in: userIds } },
+    select: { user: { select: { username: true } } },
+  });
+  if (already.length) {
+    return { code: 409, error: `Already registered in this contest: ${already.map((a) => a.user.username).join(", ")}` };
+  }
+  return { teamId: team.id, userIds };
+}
+
 async function detail(req: FastifyRequest, contest: LoadedContest): Promise<ContestDetail> {
   const viewer = await getSessionUser(req);
   const access = await contestAccess(contest, viewer);
+  const team = await viewerTeam(contest.id, access.participation?.teamId);
   return {
     ...toSummary(contest),
     description: contest.description,
@@ -176,6 +233,7 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
     viewer: {
       registered: access.registered,
       canManage: access.canManage,
+      team,
       participation: access.participation && {
         virtual: access.participation.virtual,
         startedAt: access.participation.startedAt?.toISOString() ?? null,
@@ -237,16 +295,20 @@ function noProblemsReason(access: ContestAccess, fallback: string): string {
 async function loadStandings(
   contest: LoadedContest,
   freezeAt: Date | null,
-  /** virtual চলাকালীন: আসলরা + শুধু এই virtual প্রতিযোগী, প্রত্যেকের নিজের শুরু থেকে cutoffMs পর্যন্ত */
-  ghost?: { userId: string; cutoffMs: number },
+  /** virtual চলাকালীন: আসলরা + শুধু এই virtual প্রতিযোগী (বা তার টিম), প্রত্যেকের নিজের শুরু থেকে cutoffMs পর্যন্ত */
+  ghost?: { userId: string; teamId: string | null; cutoffMs: number },
 ) {
+  const mine = ghost && (ghost.teamId ? { teamId: ghost.teamId } : { userId: ghost.userId });
   const [participants, submissions] = await Promise.all([
     prisma!.contestParticipant.findMany({
-      where: { contestId: contest.id, ...(ghost ? { OR: [{ virtual: false }, { userId: ghost.userId }] } : {}) },
+      where: { contestId: contest.id, ...(mine ? { OR: [{ virtual: false }, mine] } : {}) },
+      orderBy: { registeredAt: "asc" },
       select: {
         userId: true,
         startedAt: true,
         virtual: true,
+        teamId: true,
+        team: { select: { slug: true, name: true } },
         user: { select: { username: true, displayName: true, institution: true, batch: true, section: true } },
       },
     }),
@@ -256,20 +318,48 @@ async function loadStandings(
       select: { userId: true, problemId: true, verdict: true, score: true, createdAt: true },
     }),
   ]);
+
+  // standings-এর একটা সারি: একক কনটেস্টে একজন, team contest-এ পুরো টিম (সদস্যদের সাবমিশন একসাথে)
+  type Row = Parameters<typeof computeStandings>[0]["participants"][number];
+  const rows = new Map<string, Row>();
+  const rowOf = new Map<string, string>(); // userId → সারির key
+  for (const p of participants) {
+    const key = p.teamId ?? p.userId;
+    rowOf.set(p.userId, key);
+    const existing = rows.get(key);
+    if (existing?.team) {
+      existing.team.members.push(p.user.username);
+      continue;
+    }
+    rows.set(key, {
+      userId: key,
+      // FIXED-এর আসল প্রতিযোগীরা সবাই কনটেস্টের শুরু থেকে; টিমের সবার Start একই
+      startedAt: !p.virtual && contest.type === "FIXED" ? contest.startsAt : p.startedAt,
+      virtual: p.virtual,
+      ...(p.team
+        ? {
+            username: p.team.slug,
+            displayName: p.team.name,
+            institution: null,
+            batch: null,
+            section: null,
+            team: { slug: p.team.slug, name: p.team.name, members: [p.user.username] },
+          }
+        : p.user),
+    });
+  }
+
   return computeStandings({
     scoring: contest.scoring,
     penaltyMinutes: contest.penaltyMinutes,
     freezeAt,
     cutoffMs: ghost?.cutoffMs,
     problems: contest.problems.map((cp) => ({ problemId: cp.problem.id, label: cp.label, title: cp.problem.title })),
-    participants: participants.map((p) => ({
-      userId: p.userId,
-      // FIXED-এর আসল প্রতিযোগীরা সবাই কনটেস্টের শুরু থেকে
-      startedAt: !p.virtual && contest.type === "FIXED" ? contest.startsAt : p.startedAt,
-      virtual: p.virtual,
-      ...p.user,
-    })),
-    submissions: submissions.filter((s): s is typeof s & { userId: string } => s.userId !== null),
+    participants: [...rows.values()],
+    submissions: submissions.flatMap((s) => {
+      const key = s.userId ? rowOf.get(s.userId) : undefined;
+      return key ? [{ ...s, userId: key }] : [];
+    }),
   });
 }
 
@@ -383,6 +473,7 @@ export async function contestRoutes(app: FastifyInstance) {
       durationMinutes: contest.durationMinutes,
       type: contest.type,
       windowMinutes: Math.round((contest.endsAt.getTime() - contest.startsAt.getTime()) / 60_000),
+      teamSize: contest.teamSize,
       scoring: contest.scoring,
       penaltyMinutes: contest.penaltyMinutes,
       freezeMinutes: contest.freezeMinutes,
@@ -404,6 +495,11 @@ export async function contestRoutes(app: FastifyInstance) {
       if (user.role !== "ADMIN" && contest.authorId !== user.id) {
         return reply.code(403).send({ error: "You can't edit this contest" });
       }
+      // রেজিস্ট্রেশন শুরু হলে একক ↔ টিম বদলানো যায় না (আগের রেজিস্ট্রেশন অর্থহীন হয়ে যেত)
+      const switching = req.body.teamSize !== undefined && (req.body.teamSize === null) !== (contest.teamSize === null);
+      if (switching && (await prisma!.contestParticipant.count({ where: { contestId: contest.id } })) > 0) {
+        return reply.code(409).send({ error: "People already registered — you can't switch between team and individual now" });
+      }
       const v = await validateInput(req.body, user);
       if ("error" in v) return reply.code(400).send({ error: v.error });
       try {
@@ -420,11 +516,16 @@ export async function contestRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<SlugParams & { Body: { password?: string } }>(
+  app.post<SlugParams & { Body: { password?: string; team?: string } }>(
     "/contests/:slug/register",
     {
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
-      schema: { body: { type: "object", properties: { password: { type: "string", maxLength: 100 } } } },
+      schema: {
+        body: {
+          type: "object",
+          properties: { password: { type: "string", maxLength: 100 }, team: { type: "string", maxLength: 60 } },
+        },
+      },
     },
     async (req, reply) => {
       const user = await requireUser(req, reply);
@@ -437,12 +538,28 @@ export async function contestRoutes(app: FastifyInstance) {
       if (contest.passwordHash && !(await verifyPassword(req.body?.password ?? "", contest.passwordHash))) {
         return reply.code(403).send({ error: "Wrong contest password" });
       }
-      await prisma!.contestParticipant.upsert({
-        where: { contestId_userId: { contestId: contest.id, userId: user.id } },
-        create: { contestId: contest.id, userId: user.id },
-        update: {},
-      });
-      rememberParticipation(contest.id, user.id, { virtual: false, startedAt: null });
+      if (contest.teamSize) {
+        // একজন সদস্য পুরো টিম রেজিস্টার করে (সবার এক সাথে)
+        const roster = await teamRoster(contest, user.id, req.body?.team);
+        if ("error" in roster) return reply.code(roster.code).send({ error: roster.error });
+        try {
+          await prisma!.contestParticipant.createMany({
+            data: roster.userIds.map((userId) => ({ contestId: contest.id, userId, teamId: roster.teamId })),
+          });
+        } catch (err) {
+          if (isUniqueViolation(err)) return reply.code(409).send({ error: "Someone in the team just registered — reload" });
+          throw err;
+        }
+        forgetParticipation(contest.id, roster.userIds);
+        forgetTeammates(roster.userIds);
+      } else {
+        await prisma!.contestParticipant.upsert({
+          where: { contestId_userId: { contestId: contest.id, userId: user.id } },
+          create: { contestId: contest.id, userId: user.id },
+          update: {},
+        });
+        rememberParticipation(contest.id, user.id, { virtual: false, startedAt: null, teamId: null });
+      }
       invalidateContest(contest.slug); // প্রতিযোগীর সংখ্যা বদলেছে
       return { ok: true };
     },
@@ -461,23 +578,33 @@ export async function contestRoutes(app: FastifyInstance) {
     if (access.phase === "ENDED") return reply.code(409).send({ error: "The window has closed" });
     if (access.participation?.startedAt) return detail(req, contest); // দুবার চাপলে কিছু হয় না
 
-    // দুই ট্যাব থেকে একসাথে চাপলেও প্রথম সময়টাই থাকে
+    // দুই ট্যাব থেকে একসাথে চাপলেও প্রথম সময়টাই থাকে; টিমে একজন চাপলে পুরো টিমের ঘড়ি চলে
+    const teamId = access.participation?.teamId;
+    const who = teamId ? { teamId } : { userId: user.id };
     await prisma!.contestParticipant.updateMany({
-      where: { contestId: contest.id, userId: user.id, startedAt: null },
+      where: { contestId: contest.id, ...who, startedAt: null },
       data: { startedAt: new Date() },
     });
-    const row = await prisma!.contestParticipant.findUniqueOrThrow({
-      where: { contestId_userId: { contestId: contest.id, userId: user.id } },
-      select: { virtual: true, startedAt: true },
-    });
-    rememberParticipation(contest.id, user.id, row);
+    if (teamId) {
+      const mates = await prisma!.contestParticipant.findMany({ where: { contestId: contest.id, teamId }, select: { userId: true } });
+      forgetParticipation(contest.id, mates.map((m) => m.userId));
+    } else {
+      const row = await prisma!.contestParticipant.findUniqueOrThrow({
+        where: { contestId_userId: { contestId: contest.id, userId: user.id } },
+        select: PARTICIPATION_SELECT,
+      });
+      rememberParticipation(contest.id, user.id, row);
+    }
     return detail(req, contest);
   });
 
   // কনটেস্ট শেষে: যে আসলে অংশ নেয়নি, সে নিজের সময়ে একই সময়সীমায় দিতে পারে
-  app.post<SlugParams>(
+  app.post<SlugParams & { Body: { team?: string } | undefined }>(
     "/contests/:slug/virtual",
-    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: { body: { type: ["object", "null"], properties: { team: { type: "string", maxLength: 60 } } } },
+    },
     async (req, reply) => {
       const user = await requireUser(req, reply);
       if (!user) return reply;
@@ -492,16 +619,32 @@ export async function contestRoutes(app: FastifyInstance) {
           error: access.participation.virtual ? "You already did this contest virtually" : "You took part in this contest",
         });
       }
+      const startedAt = new Date();
+      if (contest.teamSize) {
+        // team contest-এ virtual-ও পুরো টিম মিলে, একই ঘড়িতে
+        const roster = await teamRoster(contest, user.id, req.body?.team);
+        if ("error" in roster) return reply.code(roster.code).send({ error: roster.error });
+        try {
+          await prisma!.contestParticipant.createMany({
+            data: roster.userIds.map((userId) => ({ contestId: contest.id, userId, teamId: roster.teamId, virtual: true, startedAt })),
+          });
+        } catch (err) {
+          if (!isUniqueViolation(err)) throw err; // দুবার চাপলে
+        }
+        forgetParticipation(contest.id, roster.userIds);
+        forgetTeammates(roster.userIds);
+        return detail(req, contest);
+      }
       try {
         await prisma!.contestParticipant.create({
-          data: { contestId: contest.id, userId: user.id, virtual: true, startedAt: new Date() },
+          data: { contestId: contest.id, userId: user.id, virtual: true, startedAt },
         });
       } catch (err) {
         if (!isUniqueViolation(err)) throw err; // দুবার চাপলে
       }
       const row = await prisma!.contestParticipant.findUniqueOrThrow({
         where: { contestId_userId: { contestId: contest.id, userId: user.id } },
-        select: { virtual: true, startedAt: true },
+        select: PARTICIPATION_SELECT,
       });
       rememberParticipation(contest.id, user.id, row);
       return detail(req, contest);
@@ -547,7 +690,11 @@ export async function contestRoutes(app: FastifyInstance) {
 
     const { json, gzip, etag } = await cachedStandings(key, ttl, async () => {
       if (ghostMs === null) return loadStandings(contest, effectiveFreeze);
-      const view = await loadStandings(contest, null, { userId: viewerId!, cutoffMs: ghostMs });
+      const view = await loadStandings(contest, null, {
+        userId: viewerId!,
+        teamId: access.participation?.teamId ?? null,
+        cutoffMs: ghostMs,
+      });
       return { ...view, ghostMinute: Math.floor(ghostMs / 60_000) };
     });
 
@@ -581,7 +728,10 @@ export async function contestRoutes(app: FastifyInstance) {
     const lines = [header.map(csvCell).join(",")];
     // মার্কসের জন্য শুধু আসল প্রতিযোগী (virtual বাদ)
     for (const r of s.rows.filter((row) => !row.virtual)) {
-      const cells: (string | number | null)[] = [r.rank, r.username, r.displayName, r.institution, r.batch, r.section, r.points];
+      // টিমের সারিতে: Username = টিমের নাম, Name = সদস্যরা
+      const cells: (string | number | null)[] = r.team
+        ? [r.rank, r.team.name, r.team.members.join(" "), null, null, null, r.points]
+        : [r.rank, r.username, r.displayName, r.institution, r.batch, r.section, r.points];
       if (icpc) cells.push(r.penalty);
       for (const p of s.problems) {
         const c = r.cells[p.label]!;

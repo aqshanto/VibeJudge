@@ -20,6 +20,8 @@ export interface StandingsInput {
     /** নিজের শুরু (FIXED-এ কনটেস্টের শুরু); WINDOW-এ Start না চাপলে null */
     startedAt: Date | null;
     virtual: boolean;
+    /** team contest-এ সারিটা টিমের */
+    team?: { slug: string; name: string; members: string[] };
     username: string;
     displayName: string | null;
     institution: string | null;
@@ -122,6 +124,7 @@ export function computeStandings(input: StandingsInput): Omit<StandingsView, "ge
       penalty,
       cells: Object.fromEntries(mine),
       virtual: p.virtual,
+      ...(p.team ? { team: p.team } : {}),
     };
   });
 

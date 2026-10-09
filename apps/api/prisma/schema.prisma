@@ -40,8 +40,49 @@ model User {
   contests         Contest[]
   participations   ContestParticipant[]
   clarifications   Clarification[]      @relation("asker")
+  teamMemberships  TeamMember[]
+  teamsCreated     Team[]               @relation("teamCreator")
 
   @@map("users")
+}
+
+// ---------------- Teams ----------------
+
+/// স্থায়ী টিম — একবার বানিয়ে বিভিন্ন team contest-এ রেজিস্টার করা যায়
+model Team {
+  id             String               @id @default(cuid())
+  /// URL-এর জন্য (a-z, 0-9, -)
+  slug           String               @unique
+  name           String
+  /// ছোট হাতের নাম — একই নামের দুটো টিম যেন না হয় (বড়/ছোট হাতের তফাত বাদে)
+  nameKey        String               @unique
+  createdById    String?
+  createdBy      User?                @relation("teamCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime             @default(now())
+  members        TeamMember[]
+  participations ContestParticipant[]
+
+  @@map("teams")
+}
+
+enum TeamRole {
+  OWNER // সদস্য invite/বাদ দিতে পারে
+  MEMBER
+}
+
+model TeamMember {
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      TeamRole @default(MEMBER)
+  /// false = invite পাঠানো হয়েছে, এখনো Accept করেনি
+  accepted  Boolean  @default(false)
+  invitedAt DateTime @default(now())
+
+  @@id([teamId, userId])
+  @@index([userId])
+  @@map("team_members")
 }
 
 /// লগইন session। কুকিতে random টোকেন থাকে, DB-তে শুধু তার SHA-256 hash।
@@ -207,6 +248,8 @@ model Contest {
   endsAt          DateTime
   scoring         ScoringType @default(ICPC)
   type            ContestType @default(FIXED)
+  /// null = একক কনটেস্ট; সংখ্যা = team contest, প্রতি টিমে সর্বোচ্চ এতজন
+  teamSize        Int?
   /// ICPC: প্রতিটা ভুল সাবমিশনে কত মিনিট (CE বাদে)
   penaltyMinutes  Int         @default(20)
   /// শেষের এত মিনিট standings লুকানো থাকে (০ = freeze নেই); কনটেস্ট শেষে নিজে থেকে খুলে যায়
@@ -248,17 +291,21 @@ model ContestProblem {
 /// পরে Team যোগ হলে এখানে teamId আসবে
 model ContestParticipant {
   contestId    String
-  contest      Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  contest      Contest   @relation(fields: [contestId], references: [id], onDelete: Cascade)
   userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  registeredAt DateTime @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registeredAt DateTime  @default(now())
   /// WINDOW বা virtual-এ "Start" চাপার সময় (FIXED-এ null)
   startedAt    DateTime?
   /// কনটেস্ট শেষ হওয়ার পরে নিজে নিজে দেওয়া — standings-এ আলাদা চিহ্ন, আসলদের rank বদলায় না
-  virtual      Boolean  @default(false)
+  virtual      Boolean   @default(false)
+  /// team contest-এ কোন টিমের হয়ে (রেজিস্ট্রেশনের সময়ের সদস্যরা — পরে টিম বদলালেও এটা বদলায় না)
+  teamId       String?
+  team         Team?     @relation(fields: [teamId], references: [id], onDelete: Restrict)
 
   @@id([contestId, userId])
   @@index([userId])
+  @@index([teamId])
   @@map("contest_participants")
 }
 

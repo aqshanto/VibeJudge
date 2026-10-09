@@ -31,14 +31,39 @@ async function buildReport(contest: LoadedContest, minSimilarity: number): Promi
   const subs = await prisma!.submission.findMany({
     where: { contestId: contest.id, inContest: true, verdict: { notIn: ["PENDING", "JUDGING", "CE", "IE"] } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, problemId: true, verdict: true, source: true, language: true, user: { select: { username: true } } },
+    select: {
+      id: true,
+      problemId: true,
+      verdict: true,
+      source: true,
+      language: true,
+      userId: true,
+      user: { select: { username: true } },
+    },
   });
 
-  // প্রতি প্রবলেমে প্রত্যেকের একটা: শেষ AC, না থাকলে শেষ judged সাবমিশন
+  // team contest-এ "মালিক" = টিম — সতীর্থদের কোড মিললে সেটা কপি না
+  const teamOf = new Map(
+    contest.teamSize
+      ? (
+          await prisma!.contestParticipant.findMany({
+            where: { contestId: contest.id, teamId: { not: null } },
+            select: { userId: true, team: { select: { name: true } } },
+          })
+        ).map((p) => [p.userId, p.team!.name])
+      : [],
+  );
+  const ownerOf = (s: (typeof subs)[number]) => teamOf.get(s.userId ?? "") ?? s.user!.username;
+  const shownName = (s: (typeof subs)[number]) => {
+    const team = teamOf.get(s.userId ?? "");
+    return team ? `${team} (${s.user!.username})` : s.user!.username;
+  };
+
+  // প্রতি প্রবলেমে প্রত্যেকের (বা প্রতিটা টিমের) একটা: শেষ AC, না থাকলে শেষ judged সাবমিশন
   const chosen = new Map<string, (typeof subs)[number]>();
   for (const s of subs) {
     if (!s.user) continue;
-    const key = `${s.problemId}:${s.user.username}`;
+    const key = `${s.problemId}:${ownerOf(s)}`;
     const prev = chosen.get(key);
     if (!prev || (prev.verdict !== "AC" && s.verdict === "AC")) chosen.set(key, s);
   }
@@ -47,9 +72,9 @@ async function buildReport(contest: LoadedContest, minSimilarity: number): Promi
     minSimilarity,
     problems: contest.problems.map((cp) => {
       const list = [...chosen.values()].filter((s) => s.problemId === cp.problem.id);
-      const names = new Map(list.map((s) => [s.id, s.user!.username]));
+      const names = new Map(list.map((s) => [s.id, shownName(s)]));
       const { pairs } = findSimilarPairs(
-        list.map((s) => ({ id: s.id, owner: s.user!.username, source: s.source, language: s.language })),
+        list.map((s) => ({ id: s.id, owner: ownerOf(s), source: s.source, language: s.language })),
         { minSimilarity },
       );
       return {

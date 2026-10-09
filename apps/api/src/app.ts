@@ -15,6 +15,7 @@ import { authorProblemRoutes } from "./routes/author-problems.js";
 import { authorRoutes } from "./routes/authors.js";
 import { judgeRoutes } from "./routes/judge.js";
 import { publicRoutes } from "./routes/public.js";
+import { teamRoutes } from "./routes/teams.js";
 import { userRoutes } from "./routes/users.js";
 
 export async function buildApp() {
@@ -68,6 +69,7 @@ export async function buildApp() {
   await app.register(contestMessageRoutes, { prefix: "/api" });
   await app.register(plagiarismRoutes, { prefix: "/api" });
   await app.register(userRoutes, { prefix: "/api" });
+  await app.register(teamRoutes, { prefix: "/api" });
   await app.register(adminUserRoutes, { prefix: "/api" });
   await app.register(judgeRoutes, { prefix: "/api/judge" });
 
