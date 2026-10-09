@@ -226,6 +226,7 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
     freezeMinutes: contest.freezeMinutes,
     hasPassword: contest.passwordHash !== null,
     languages: contest.languages,
+    ratedAt: contest.ratedAt?.toISOString() ?? null,
     serverTime: new Date().toISOString(),
     problems: access.canSeeProblems
       ? contest.problems.map((cp) => ({ label: cp.label, slug: cp.problem.slug, title: cp.problem.title }))
@@ -291,8 +292,8 @@ function noProblemsReason(access: ContestAccess, fallback: string): string {
   return fallback;
 }
 
-/** DB থেকে প্রতিযোগী আর গোনার মতো সাবমিশন এনে standings হিসাব */
-async function loadStandings(
+/** DB থেকে প্রতিযোগী আর গোনার মতো সাবমিশন এনে standings হিসাব (rating লাগানো হলে পরিবর্তনসহ) */
+export async function loadStandings(
   contest: LoadedContest,
   freezeAt: Date | null,
   /** virtual চলাকালীন: আসলরা + শুধু এই virtual প্রতিযোগী (বা তার টিম), প্রত্যেকের নিজের শুরু থেকে cutoffMs পর্যন্ত */
@@ -309,7 +310,9 @@ async function loadStandings(
         virtual: true,
         teamId: true,
         team: { select: { slug: true, name: true } },
-        user: { select: { username: true, displayName: true, institution: true, batch: true, section: true } },
+        user: {
+          select: { username: true, displayName: true, institution: true, batch: true, section: true, rating: true },
+        },
       },
     }),
     prisma!.submission.findMany({
@@ -318,6 +321,16 @@ async function loadStandings(
       select: { userId: true, problemId: true, verdict: true, score: true, createdAt: true },
     }),
   ]);
+  const ratingChanges = contest.ratedAt
+    ? Object.fromEntries(
+        (
+          await prisma!.ratingChange.findMany({
+            where: { contestId: contest.id },
+            select: { oldRating: true, newRating: true, user: { select: { username: true } } },
+          })
+        ).map((c) => [c.user.username, { old: c.oldRating, new: c.newRating }]),
+      )
+    : undefined;
 
   // standings-এর একটা সারি: একক কনটেস্টে একজন, team contest-এ পুরো টিম (সদস্যদের সাবমিশন একসাথে)
   type Row = Parameters<typeof computeStandings>[0]["participants"][number];
@@ -349,7 +362,7 @@ async function loadStandings(
     });
   }
 
-  return computeStandings({
+  const view = computeStandings({
     scoring: contest.scoring,
     penaltyMinutes: contest.penaltyMinutes,
     freezeAt,
@@ -361,6 +374,7 @@ async function loadStandings(
       return key ? [{ ...s, userId: key }] : [];
     }),
   });
+  return ratingChanges ? { ...view, ratingChanges } : view;
 }
 
 /**

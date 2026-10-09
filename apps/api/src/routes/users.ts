@@ -22,7 +22,7 @@ export async function userRoutes(app: FastifyInstance) {
     const seeAll = isMe || viewer?.role === "ADMIN";
     const contestFilter = seeAll ? {} : { isPublic: true };
 
-    const [solvedProblems, submissions, accepted, authored, participated, activity, teams] = await Promise.all([
+    const [solvedProblems, submissions, accepted, authored, participated, activity, teams, ratingHistory] = await Promise.all([
       // শুধু Public প্রবলেম — Contest/Private প্রবলেমের নাম ফাঁস হবে না
       prisma!.$queryRaw<{ slug: string; title: string }[]>`
         SELECT DISTINCT p."slug", p."title"
@@ -57,6 +57,16 @@ export async function userRoutes(app: FastifyInstance) {
         orderBy: { createdAt: "asc" },
         select: { slug: true, name: true },
       }),
+      prisma!.ratingChange.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: "asc" },
+        select: {
+          rank: true,
+          oldRating: true,
+          newRating: true,
+          contest: { select: { slug: true, title: true, endsAt: true } },
+        },
+      }),
     ]);
 
     const profile: UserProfile = {
@@ -72,6 +82,15 @@ export async function userRoutes(app: FastifyInstance) {
       authoredContests: authored.map(toSummary),
       participatedContests: participated.map(toSummary),
       teams,
+      rating: user.rating,
+      maxRating: user.maxRating,
+      ratingHistory: ratingHistory.map((r) => ({
+        contest: { slug: r.contest.slug, title: r.contest.title },
+        at: r.contest.endsAt.toISOString(),
+        rank: r.rank,
+        oldRating: r.oldRating,
+        newRating: r.newRating,
+      })),
       isMe,
       hasPassword: seeAll ? user.passwordHash !== null : null,
       activity,

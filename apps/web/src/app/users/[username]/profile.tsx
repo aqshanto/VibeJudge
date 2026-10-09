@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { contestPhase, type AuthUser, type ContestSummary, type ProfileUpdate, type UserProfile } from "@vibejudge/shared";
+import { contestPhase, ratingTier, type AuthUser, type ContestSummary, type ProfileUpdate, type UserProfile } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/time";
@@ -10,6 +10,7 @@ import { ErrorText, Field, buttonClass, inputClass, secondaryButtonClass } from 
 import { SubmissionTable } from "@/components/submission-table";
 import { PhaseBadge } from "../../contests/phase-badge";
 import { Heatmap } from "./heatmap";
+import { RatingChart, RatingDelta, ratingTextClass } from "@/components/rating";
 import { AdminResetPassword, ChangePassword } from "./password-forms";
 
 export function Profile({ username }: { username: string }) {
@@ -33,7 +34,7 @@ export function Profile({ username }: { username: string }) {
     <div className="flex flex-col gap-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">
+          <h1 className={`text-2xl font-semibold ${ratingTextClass(profile.rating)}`}>
             {profile.username}
             {profile.role !== "USER" && (
               <span className="ml-2 rounded bg-sky-600/15 px-1.5 py-0.5 align-middle text-xs text-sky-700 dark:text-sky-300">
@@ -71,6 +72,50 @@ export function Profile({ username }: { username: string }) {
         <Stat label="Submissions" value={profile.stats.submissions} />
         <Stat label="Accepted" value={profile.stats.accepted} />
       </dl>
+
+      {profile.rating !== null && (
+        <section className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+            <h2 className="font-semibold">Rating</h2>
+            <span className={`text-2xl font-semibold ${ratingTextClass(profile.rating)}`}>{profile.rating}</span>
+            <span className={ratingTextClass(profile.rating)}>{ratingTier(profile.rating).title}</span>
+            {profile.maxRating !== null && (
+              <span className="text-sm text-zinc-500">
+                max <span className={ratingTextClass(profile.maxRating)}>{profile.maxRating}</span>
+              </span>
+            )}
+          </div>
+          <RatingChart history={profile.ratingHistory} />
+          <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/15">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-black/[.03] text-zinc-500 dark:bg-white/[.04]">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Contest</th>
+                  <th className="px-3 py-2 text-right font-medium">Rank</th>
+                  <th className="px-3 py-2 text-right font-medium">Change</th>
+                  <th className="px-3 py-2 text-right font-medium">New rating</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...profile.ratingHistory].reverse().map((h) => (
+                  <tr key={h.contest.slug} className="border-t border-black/10 dark:border-white/10">
+                    <td className="px-3 py-2">
+                      <Link href={`/contests/${h.contest.slug}/standings`} className="hover:underline">
+                        {h.contest.title}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-right">{h.rank}</td>
+                    <td className="px-3 py-2 text-right">
+                      <RatingDelta from={h.oldRating} to={h.newRating} />
+                    </td>
+                    <td className={`px-3 py-2 text-right ${ratingTextClass(h.newRating)}`}>{h.newRating}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <Heatmap activity={profile.activity} />
 

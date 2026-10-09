@@ -8,13 +8,15 @@ import { useAuth } from "@/lib/auth";
 import { ContestHeader } from "../contest-header";
 import { useContest } from "../use-contest";
 import { jitter, schedulePoll } from "@/lib/poll";
+import { RatedName, RatingDelta } from "@/components/rating";
 import { inputClass, secondaryButtonClass } from "@/components/ui";
 
 // চলাকালীন এত পরপর রিফ্রেশ (সার্ভারে ১০ সেকেন্ডের cache আছে); ১০০০ জনে প্রতি সেকেন্ডে ~১৫টা request
 const REFRESH_MS = 60_000;
 
 export function Standings({ slug }: { slug: string }) {
-  const { contest, phase, personal, now, error: contestError } = useContest(slug);
+  const { contest, phase, personal, now, reload: reloadContest, error: contestError } = useContest(slug);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { user } = useAuth();
   const [data, setData] = useState<StandingsView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export function Standings({ slug }: { slug: string }) {
       cancelled = true;
       cancelPoll();
     };
-  }, [slug, phase, personal]);
+  }, [slug, phase, personal, refreshKey]);
 
   if (contestError) return <p className="text-red-600">Could not load contest: {contestError}</p>;
   if (!contest || !phase) return <p className="text-zinc-500">Loading…</p>;
@@ -139,6 +141,16 @@ export function Standings({ slug }: { slug: string }) {
               )}
             </div>
           )}
+          {user?.role === "ADMIN" && phase === "ENDED" && !contest.teamSize && (
+            <RatingControls
+              slug={slug}
+              ratedAt={contest.ratedAt}
+              onDone={async () => {
+                await reloadContest();
+                setRefreshKey((k) => k + 1);
+              }}
+            />
+          )}
           {data.rows.length === 0 ? (
             <p className="text-zinc-500">Nobody has registered yet.</p>
           ) : (
@@ -181,7 +193,12 @@ export function Standings({ slug }: { slug: string }) {
                               {r.team.name}
                             </Link>
                           ) : (
-                            r.username
+                            <RatedName username={r.username} rating={r.rating} />
+                          )}
+                          {data.ratingChanges?.[r.username] && (
+                            <span className="ml-2">
+                              <RatingDelta from={data.ratingChanges[r.username]!.old} to={data.ratingChanges[r.username]!.new} />
+                            </span>
                           )}
                           {r.virtual && (
                             <span className="ml-1.5 rounded bg-violet-500/15 px-1.5 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">
@@ -260,4 +277,56 @@ function Cell({ cell, scoring }: { cell: StandingsCell; scoring: ScoringType }) 
     );
   }
   return <td className="px-2 py-1.5" />;
+}
+
+/** Admin: কনটেস্ট শেষে rating লাগানো / সবচেয়ে শেষেরটা ফেরানো */
+function RatingControls({ slug, ratedAt, onDone }: { slug: string; ratedAt: string | null; onDone: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(method: "POST" | "DELETE", question: string) {
+    if (!window.confirm(question)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/contests/${encodeURIComponent(slug)}/rating`, { method });
+      await onDone();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/15">
+      {ratedAt ? (
+        <>
+          <span>✓ Rated — the changes show next to each name.</span>
+          <button
+            type="button"
+            disabled={busy}
+            className="text-red-600 hover:underline"
+            onClick={() => run("DELETE", "Undo the rating changes of this contest?")}
+          >
+            Undo rating
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="text-zinc-500">
+            Admin: check the plagiarism report first, then apply rating to everyone who submitted.
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            className={secondaryButtonClass}
+            onClick={() => run("POST", "Apply rating for this contest? Everyone who submitted will get a new rating.")}
+          >
+            {busy ? "Applying…" : "Apply rating"}
+          </button>
+        </>
+      )}
+      {error && <span className="text-red-600">{error}</span>}
+    </div>
+  );
 }

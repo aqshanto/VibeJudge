@@ -29,6 +29,9 @@ model User {
   institution  String?
   batch        String?
   section      String?
+  /// rated কনটেস্টে অংশ না নিলে null (শুরু ধরা হয় ১৫০০)
+  rating       Int?
+  maxRating    Int?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -42,6 +45,7 @@ model User {
   clarifications   Clarification[]      @relation("asker")
   teamMemberships  TeamMember[]
   teamsCreated     Team[]               @relation("teamCreator")
+  ratingChanges    RatingChange[]
 
   @@map("users")
 }
@@ -250,6 +254,8 @@ model Contest {
   type            ContestType @default(FIXED)
   /// null = একক কনটেস্ট; সংখ্যা = team contest, প্রতি টিমে সর্বোচ্চ এতজন
   teamSize        Int?
+  /// Admin rating লাগানোর সময় (null = লাগানো হয়নি)
+  ratedAt         DateTime?
   /// ICPC: প্রতিটা ভুল সাবমিশনে কত মিনিট (CE বাদে)
   penaltyMinutes  Int         @default(20)
   /// শেষের এত মিনিট standings লুকানো থাকে (০ = freeze নেই); কনটেস্ট শেষে নিজে থেকে খুলে যায়
@@ -269,6 +275,7 @@ model Contest {
   submissions    Submission[]
   clarifications Clarification[]
   announcements  Announcement[]
+  ratingChanges  RatingChange[]
 
   @@index([startsAt])
   @@index([endsAt])
@@ -337,4 +344,22 @@ model Announcement {
 
   @@index([contestId, createdAt])
   @@map("announcements")
+}
+
+/// একটা rated কনটেস্টে একজনের rating কত থেকে কত হলো (প্রোফাইলের গ্রাফ, standings-এর Δ)
+model RatingChange {
+  id        String   @id @default(cuid())
+  contestId String
+  contest   Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// rated প্রতিযোগীদের মধ্যে rank
+  rank      Int
+  oldRating Int
+  newRating Int
+  createdAt DateTime @default(now())
+
+  @@unique([contestId, userId])
+  @@index([userId])
+  @@map("rating_changes")
 }

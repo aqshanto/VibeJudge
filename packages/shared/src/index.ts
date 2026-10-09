@@ -364,6 +364,8 @@ export interface ContestDetail extends ContestSummary {
   hasPassword: boolean;
   /** এই কনটেস্টে যে ভাষাগুলোতে সাবমিট করা যায় */
   languages: Language[];
+  /** Admin rating লাগানোর সময় (null = লাগানো হয়নি) */
+  ratedAt: string | null;
   /** সার্ভারের বর্তমান সময় — ব্রাউজারের ঘড়ি ভুল থাকলেও countdown ঠিক থাকে */
   serverTime: string;
   /** দেখার অনুমতি না থাকলে খালি (যেমন শুরুর আগে) */
@@ -444,6 +446,8 @@ export interface StandingsRow {
   virtual: boolean;
   /** team contest-এ: সারিটা টিমের (username = টিমের slug, displayName = টিমের নাম) */
   team?: { slug: string; name: string; members: string[] };
+  /** এখনকার rating (নামের রং-এর জন্য); unrated বা টিম হলে null */
+  rating: number | null;
 }
 
 /** GET /api/contests/:slug/standings */
@@ -455,6 +459,8 @@ export interface StandingsView {
   rows: StandingsRow[];
   /** virtual চলাকালীন: আসল প্রতিযোগীদের এই মিনিট পর্যন্ত অবস্থা দেখানো হচ্ছে */
   ghostMinute?: number;
+  /** rating লাগানো হলে: username → আগের আর নতুন rating */
+  ratingChanges?: Record<string, { old: number; new: number }>;
   generatedAt: string;
 }
 
@@ -558,6 +564,11 @@ export interface UserProfile {
   participatedContests: ContestSummary[];
   /** যে টিমগুলোর সদস্য (Accept করা) */
   teams: { slug: string; name: string }[];
+  /** rated কনটেস্টে না থাকলে null */
+  rating: number | null;
+  maxRating: number | null;
+  /** পুরোনো থেকে নতুন */
+  ratingHistory: RatingHistoryEntry[];
   /** নিজের প্রোফাইল হলে true (এডিট করা যায়) */
   isMe: boolean;
   /** পাসওয়ার্ড আছে কি না (শুধু Google অ্যাকাউন্টে false) — শুধু নিজে বা admin দেখলে */
@@ -622,4 +633,45 @@ export interface TeamView {
   me: { role: TeamRole; accepted: boolean } | null;
   /** যে কনটেস্টে রেজিস্টার করেছে (তখন টিম মোছা যায় না) */
   contests: { slug: string; title: string }[];
+}
+
+// ---------- Rating ----------
+
+/** প্রথম rated কনটেস্টের আগে সবার rating */
+export const INITIAL_RATING = 1500;
+
+export interface RatingHistoryEntry {
+  contest: { slug: string; title: string };
+  /** কনটেস্ট শেষের সময় */
+  at: string;
+  rank: number;
+  oldRating: number;
+  newRating: number;
+}
+
+/** GET /api/ratings */
+export interface RatingRow {
+  rank: number;
+  username: string;
+  displayName: string | null;
+  rating: number;
+  maxRating: number;
+  contests: number;
+}
+
+/** Codeforces-এর পদবি আর রং (rating-এর নিচের সীমা অনুযায়ী, বড় থেকে ছোট) */
+export const RATING_TIERS = [
+  { min: 2400, title: "Grandmaster", color: "red" },
+  { min: 2100, title: "Master", color: "orange" },
+  { min: 1900, title: "Candidate Master", color: "violet" },
+  { min: 1600, title: "Expert", color: "blue" },
+  { min: 1400, title: "Specialist", color: "cyan" },
+  { min: 1200, title: "Pupil", color: "green" },
+  { min: -Infinity, title: "Newbie", color: "gray" },
+] as const;
+
+export type RatingColor = (typeof RATING_TIERS)[number]["color"];
+
+export function ratingTier(rating: number): (typeof RATING_TIERS)[number] {
+  return RATING_TIERS.find((t) => rating >= t.min)!;
 }

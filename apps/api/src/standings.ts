@@ -22,6 +22,8 @@ export interface StandingsInput {
     virtual: boolean;
     /** team contest-এ সারিটা টিমের */
     team?: { slug: string; name: string; members: string[] };
+    /** এখনকার rating (নামের রং) */
+    rating?: number | null;
     username: string;
     displayName: string | null;
     institution: string | null;
@@ -124,6 +126,7 @@ export function computeStandings(input: StandingsInput): Omit<StandingsView, "ge
       penalty,
       cells: Object.fromEntries(mine),
       virtual: p.virtual,
+      rating: p.rating ?? null,
       ...(p.team ? { team: p.team } : {}),
     };
   });
