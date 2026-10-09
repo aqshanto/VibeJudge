@@ -5,6 +5,7 @@ import type { AuthorRequestStatus, AuthorRequestView } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ErrorText, buttonClass, secondaryButtonClass } from "@/components/ui";
+import { BulkAccounts } from "./bulk-accounts";
 
 const TABS: AuthorRequestStatus[] = ["PENDING", "APPROVED", "REJECTED"];
 
@@ -98,6 +99,11 @@ export default function AdminPage() {
           </li>
         ))}
       </ul>
+
+      <section className="mt-12 border-t border-black/10 pt-8 dark:border-white/10">
+        <h2 className="mb-3 text-lg font-semibold">Bulk accounts</h2>
+        <BulkAccounts />
+      </section>
     </Shell>
   );
 }

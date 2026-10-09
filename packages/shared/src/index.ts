@@ -326,6 +326,7 @@ export interface StandingsRow {
   username: string;
   displayName: string | null;
   institution: string | null;
+  batch: string | null;
   section: string | null;
   /** ICPC: সলভ সংখ্যা; IOI: মোট নম্বর */
   points: number;
@@ -374,6 +375,33 @@ export interface ContestMessages {
 export interface ContestProblemView extends ProblemView {
   label: string;
   contest: { slug: string; title: string; phase: ContestPhase };
+}
+
+// ---------- Admin: বাল্ক অ্যাকাউন্ট ----------
+
+export const MAX_BULK_ROWS = 200; // এক request-এ; ব্রাউজার বড় তালিকা ভাগে ভাগে পাঠায়
+
+export interface BulkUserRow {
+  username: string;
+  displayName?: string;
+  email?: string;
+  institution?: string;
+  batch?: string;
+  section?: string;
+}
+
+/** POST /api/admin/users/bulk */
+export interface BulkUserRequest {
+  rows: BulkUserRow[];
+  /** দিলে নতুন (আর আগে থেকে থাকা) অ্যাকাউন্টগুলো এই কনটেস্টে রেজিস্টার হয় */
+  contestSlug?: string;
+}
+
+export interface BulkUserResult {
+  /** পাসওয়ার্ড শুধু এখানেই একবার আসে — সার্ভারে আসল পাসওয়ার্ড জমা থাকে না */
+  created: { username: string; password: string; displayName: string | null; section: string | null }[];
+  skipped: { username: string; reason: string }[];
+  registered: number;
 }
 
 // ---------- Users ----------

@@ -209,9 +209,15 @@ VibeJudge/
 ### 🎯 এখানে স্যারকে ডেমো (~৬-৮ সপ্তাহ) — প্রস্তুত ✅
 
 ### ফেজ ৪ — ল্যাব ফাইনাল ফিচার (সপ্তাহ ৭-৮)
-- [ ] Admin বাল্ক অ্যাকাউন্ট (CSV আপলোড → ID/পাসওয়ার্ড)
-- [ ] Institution / Batch / Section + Standings ফিল্টার
-- [ ] Standings CSV/Excel এক্সপোর্ট (মার্কস দেওয়ার জন্য)
+
+**৪ক — বাল্ক অ্যাকাউন্ট, ফিল্টার, এক্সপোর্ট ✅**
+- [x] Admin বাল্ক অ্যাকাউন্ট: CSV (username/Student ID, name, section, batch, email…) → random পাসওয়ার্ড,
+      একবারই দেখায় + CSV ডাউনলোড; চাইলে সাথে সাথে কনটেস্টে রেজিস্টার; ভুল/ডুপ্লিকেট সারি কারণসহ বাদ
+- [x] Random পাসওয়ার্ডে হালকা hash (৪৫০টা অ্যাকাউন্ট ~৩ সে.); নিজের দেওয়া পাসওয়ার্ডে আগের মতো শক্ত hash
+- [x] Institution / Batch / Section + Standings ফিল্টার (ফিল্টারের ভেতরের rank + মোট rank)
+- [x] Standings CSV এক্সপোর্ট (author/admin, সবসময় freeze ছাড়া): প্রতি প্রবলেমে solved/minute/wrong কলাম,
+      Excel-এর জন্য BOM, Excel formula injection থেকে সুরক্ষিত
+- [ ] পাসওয়ার্ড বদলানো / Admin দিয়ে রিসেট
 - [ ] Plagiarism রিপোর্ট (Dolos)
 - [ ] প্রোফাইলে Heatmap (Solved আর সাবমিশন হিস্ট্রি ৩গ-তে হয়েছে)
 

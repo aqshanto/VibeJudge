@@ -157,6 +157,40 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
 
 type SlugParams = { Params: { slug: string } };
 
+/** DB থেকে প্রতিযোগী আর গোনার মতো সাবমিশন এনে standings হিসাব */
+async function loadStandings(contest: LoadedContest, freezeAt: Date | null) {
+  const [participants, submissions] = await Promise.all([
+    prisma!.contestParticipant.findMany({
+      where: { contestId: contest.id },
+      select: {
+        userId: true,
+        user: { select: { username: true, displayName: true, institution: true, batch: true, section: true } },
+      },
+    }),
+    prisma!.submission.findMany({
+      where: { contestId: contest.id, inContest: true },
+      orderBy: { createdAt: "asc" },
+      select: { userId: true, problemId: true, verdict: true, score: true, createdAt: true },
+    }),
+  ]);
+  return computeStandings({
+    scoring: contest.scoring,
+    startsAt: contest.startsAt,
+    penaltyMinutes: contest.penaltyMinutes,
+    freezeAt,
+    problems: contest.problems.map((cp) => ({ problemId: cp.problem.id, label: cp.label, title: cp.problem.title })),
+    participants: participants.map((p) => ({ userId: p.userId, ...p.user })),
+    submissions: submissions.filter((s): s is typeof s & { userId: string } => s.userId !== null),
+  });
+}
+
+/** CSV-এর একটা ঘর — কমা/উদ্ধৃতি থাকলে quote; "=", "+", "-", "@" দিয়ে শুরু হলে Excel যেন সূত্র না ভাবে */
+function csvCell(value: string | number | null): string {
+  let v = value === null ? "" : String(value);
+  if (typeof value === "string" && /^[=+\-@\t\r]/.test(v)) v = `'${v}`;
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
 async function loadOr404(req: FastifyRequest<SlugParams>, reply: FastifyReply) {
   const contest = await loadContestCached(req.params.slug);
   if (!contest) {
@@ -333,32 +367,7 @@ export async function contestRoutes(app: FastifyInstance) {
     const key = `${contest.id}:${contest.updatedAt.getTime()}:${effectiveFreeze ? "frozen" : "live"}`;
     const ttl = access.phase === "RUNNING" ? 10_000 : 60_000;
 
-    const { json, gzip, etag } = await cachedStandings(key, ttl, async () => {
-      const [participants, submissions] = await Promise.all([
-        prisma!.contestParticipant.findMany({
-          where: { contestId: contest.id },
-          select: {
-            userId: true,
-            user: { select: { username: true, displayName: true, institution: true, section: true } },
-          },
-        }),
-        prisma!.submission.findMany({
-          where: { contestId: contest.id, inContest: true },
-          orderBy: { createdAt: "asc" },
-          select: { userId: true, problemId: true, verdict: true, score: true, createdAt: true },
-        }),
-      ]);
-      const result = computeStandings({
-        scoring: contest.scoring,
-        startsAt: contest.startsAt,
-        penaltyMinutes: contest.penaltyMinutes,
-        freezeAt: effectiveFreeze,
-        problems: contest.problems.map((cp) => ({ problemId: cp.problem.id, label: cp.label, title: cp.problem.title })),
-        participants: participants.map((p) => ({ userId: p.userId, ...p.user })),
-        submissions: submissions.filter((s): s is typeof s & { userId: string } => s.userId !== null),
-      });
-      return result;
-    });
+    const { json, gzip, etag } = await cachedStandings(key, ttl, () => loadStandings(contest, effectiveFreeze));
 
     // ব্রাউজার আগের ETag পাঠালে আর কিছু না বদলালে শুধু 304 (প্রায় ০ বাইট)
     reply.header("etag", etag).header("cache-control", "private, no-cache").header("vary", "accept-encoding");
@@ -369,6 +378,42 @@ export async function contestRoutes(app: FastifyInstance) {
       return reply.header("content-encoding", "gzip").send(gzip);
     }
     return reply.send(json);
+  });
+
+
+  // মার্কস দেওয়ার জন্য: সবসময় freeze ছাড়া আসল ফল, শুধু author/admin
+  app.get<SlugParams>("/contests/:slug/standings.csv", async (req, reply) => {
+    const contest = await loadOr404(req, reply);
+    if (!contest) return reply;
+    const access = await contestAccess(contest, await getSessionUser(req));
+    if (!access.canManage) return reply.code(403).send({ error: "Only the contest author can export standings" });
+
+    const s = await loadStandings(contest, null);
+    const icpc = s.scoring === "ICPC";
+    const header = ["Rank", "Username", "Name", "Institution", "Batch", "Section", icpc ? "Solved" : "Score"];
+    if (icpc) header.push("Penalty");
+    for (const p of s.problems) {
+      if (icpc) header.push(`${p.label} solved`, `${p.label} minute`, `${p.label} wrong`);
+      else header.push(`${p.label} score`);
+    }
+    const lines = [header.map(csvCell).join(",")];
+    for (const r of s.rows) {
+      const cells: (string | number | null)[] = [r.rank, r.username, r.displayName, r.institution, r.batch, r.section, r.points];
+      if (icpc) cells.push(r.penalty);
+      for (const p of s.problems) {
+        const c = r.cells[p.label]!;
+        if (icpc) cells.push(c.solved ? 1 : 0, c.solvedAtMinute, c.wrong);
+        else cells.push(c.score ?? 0);
+      }
+      lines.push(cells.map(csvCell).join(","));
+    }
+    // শুরুতে BOM দিলে Excel বাংলা নাম ঠিকমতো (UTF-8) খোলে
+    const csv = "\uFEFF" + lines.join("\r\n") + "\r\n";
+    return reply
+      .type("text/csv; charset=utf-8")
+      .header("content-disposition", `attachment; filename="${contest.slug}-standings.csv"`)
+      .header("cache-control", "no-store")
+      .send(csv);
   });
 
   app.get<{ Params: { slug: string; label: string } }>("/contests/:slug/problems/:label", async (req, reply) => {

@@ -16,6 +16,7 @@ export interface StandingsInput {
     username: string;
     displayName: string | null;
     institution: string | null;
+    batch: string | null;
     section: string | null;
   }[];
   /** শুধু inContest সাবমিশন, createdAt অনুযায়ী সাজানো */
@@ -102,6 +103,7 @@ export function computeStandings(input: StandingsInput): Omit<StandingsView, "ge
       username: p.username,
       displayName: p.displayName,
       institution: p.institution,
+      batch: p.batch,
       section: p.section,
       points,
       penalty,
