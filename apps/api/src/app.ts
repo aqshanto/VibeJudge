@@ -10,6 +10,7 @@ import { adminUserRoutes } from "./routes/admin-users.js";
 import { authRoutes } from "./routes/auth.js";
 import { contestMessageRoutes } from "./routes/contest-messages.js";
 import { contestRoutes } from "./routes/contests.js";
+import { plagiarismRoutes } from "./routes/plagiarism.js";
 import { authorProblemRoutes } from "./routes/author-problems.js";
 import { authorRoutes } from "./routes/authors.js";
 import { judgeRoutes } from "./routes/judge.js";
@@ -60,6 +61,7 @@ export async function buildApp() {
   await app.register(publicRoutes, { prefix: "/api" });
   await app.register(contestRoutes, { prefix: "/api" });
   await app.register(contestMessageRoutes, { prefix: "/api" });
+  await app.register(plagiarismRoutes, { prefix: "/api" });
   await app.register(userRoutes, { prefix: "/api" });
   await app.register(adminUserRoutes, { prefix: "/api" });
   await app.register(judgeRoutes, { prefix: "/api/judge" });

@@ -372,6 +372,31 @@ export interface ContestMessages {
   clarifications: ClarificationView[];
 }
 
+/** GET /api/contests/:slug/plagiarism — শুধু কনটেস্টের author/admin */
+export interface PlagiarismReport {
+  minSimilarity: number;
+  problems: {
+    label: string;
+    title: string;
+    /** কতজনের সাবমিশন তুলনা হয়েছে */
+    compared: number;
+    pairs: {
+      similarity: number;
+      a: { submissionId: string; username: string };
+      b: { submissionId: string; username: string };
+    }[];
+  }[];
+  generatedAt: string;
+}
+
+/** GET /api/contests/:slug/plagiarism/compare?a=…&b=… */
+export interface PlagiarismCompare {
+  similarity: number;
+  label: string;
+  a: { submissionId: string; username: string; verdict: Verdict; source: string; lines: number[] };
+  b: { submissionId: string; username: string; verdict: Verdict; source: string; lines: number[] };
+}
+
 export interface ContestProblemView extends ProblemView {
   label: string;
   contest: { slug: string; title: string; phase: ContestPhase };

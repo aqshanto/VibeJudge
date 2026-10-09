@@ -18,7 +18,7 @@ export function ContestHeader({
   contest: ContestDetail;
   phase: ContestPhase;
   now: number;
-  active: "overview" | "problem" | "standings" | "messages";
+  active: "overview" | "problem" | "standings" | "messages" | "plagiarism";
   /** Messages পেজ নিজের state দেয় (একই জিনিস দুবার না আনতে) */
   messages?: Messages;
 }) {
@@ -92,6 +92,9 @@ export function ContestHeader({
             </>,
             active === "messages",
           )}
+          {contest.viewer.canManage &&
+            phase !== "UPCOMING" &&
+            link(`/contests/${contest.slug}/plagiarism`, "Plagiarism", active === "plagiarism")}
           {contest.viewer.canManage && link(`/contests/${contest.slug}/edit`, "Edit", false)}
         </nav>
       </div>
