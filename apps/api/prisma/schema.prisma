@@ -2,10 +2,10 @@
 // ফেজ ১খ: User, Problem, TestCase, Submission — কনটেস্টের টেবিল ফেজ ৩-এ যোগ হবে।
 
 generator client {
-  provider               = "prisma-client"
-  output                 = "../src/generated/prisma"
-  moduleFormat           = "esm"
-  importFileExtension    = "js"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
 }
 
 datasource db {
@@ -35,8 +35,11 @@ model User {
   problems         Problem[]
   submissions      Submission[]
   sessions         Session[]
-  authorRequests   AuthorRequest[] @relation("requester")
-  reviewedRequests AuthorRequest[] @relation("reviewer")
+  authorRequests   AuthorRequest[]      @relation("requester")
+  reviewedRequests AuthorRequest[]      @relation("reviewer")
+  contests         Contest[]
+  participations   ContestParticipant[]
+  clarifications   Clarification[]      @relation("asker")
 
   @@map("users")
 }
@@ -116,8 +119,9 @@ model Problem {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  tests       TestCase[]
-  submissions Submission[]
+  tests           TestCase[]
+  submissions     Submission[]
+  contestProblems ContestProblem[]
 
   @@map("problems")
 }
@@ -158,9 +162,115 @@ model Submission {
   judgedAt      DateTime?
   createdAt     DateTime  @default(now())
 
+  /// কনটেস্টের ভেতর থেকে করা হলে
+  contestId String?
+  contest   Contest? @relation(fields: [contestId], references: [id], onDelete: SetNull)
+  /// কনটেস্ট চলাকালীন রেজিস্টার করা প্রতিযোগীর সাবমিশন — শুধু এগুলোই standings-এ গোনা হয়
+  /// (কনটেস্টের পরে করা = upsolve, false)
+  inContest Boolean  @default(false)
+  /// IOI: পাস করা টেস্ট ÷ মোট টেস্ট × ১০০
+  score     Int?
+
   @@index([verdict, createdAt])
   @@index([problemId, createdAt])
   @@index([userId, createdAt])
   @@index([createdAt]) // সব সাবমিশনের তালিকা (নতুনগুলো আগে)
+  @@index([contestId, createdAt])
   @@map("submissions")
+}
+
+// ---------------- Contests ----------------
+
+enum ScoringType {
+  ICPC // সলভ সংখ্যা + penalty
+  IOI // আংশিক নম্বর (পাস করা টেস্টের অনুপাতে)
+}
+
+model Contest {
+  id              String      @id @default(cuid())
+  slug            String      @unique
+  title           String
+  description     String      @default("") // Markdown
+  startsAt        DateTime
+  durationMinutes Int
+  /// startsAt + durationMinutes — সেভের সময় হিসাব হয়, query-তে "শেষ হয়েছে কি না" দেখতে লাগে
+  endsAt          DateTime
+  scoring         ScoringType @default(ICPC)
+  /// ICPC: প্রতিটা ভুল সাবমিশনে কত মিনিট (CE বাদে)
+  penaltyMinutes  Int         @default(20)
+  /// শেষের এত মিনিট standings লুকানো থাকে (০ = freeze নেই); কনটেস্ট শেষে নিজে থেকে খুলে যায়
+  freezeMinutes   Int         @default(0)
+  /// false হলে কনটেস্টের তালিকায় দেখায় না, আর রেজিস্টার করতে পাসওয়ার্ড লাগে
+  isPublic        Boolean     @default(true)
+  passwordHash    String?
+  authorId        String?
+  author          User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  problems       ContestProblem[]
+  participants   ContestParticipant[]
+  submissions    Submission[]
+  clarifications Clarification[]
+  announcements  Announcement[]
+
+  @@index([startsAt])
+  @@index([endsAt])
+  @@map("contests")
+}
+
+model ContestProblem {
+  contestId String
+  contest   Contest @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  /// "A", "B", ...
+  label     String
+
+  @@id([contestId, problemId])
+  @@unique([contestId, label])
+  @@map("contest_problems")
+}
+
+/// পরে Team যোগ হলে এখানে teamId আসবে
+model ContestParticipant {
+  contestId    String
+  contest      Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registeredAt DateTime @default(now())
+
+  @@id([contestId, userId])
+  @@index([userId])
+  @@map("contest_participants")
+}
+
+model Clarification {
+  id         String    @id @default(cuid())
+  contestId  String
+  contest    Contest   @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation("asker", fields: [userId], references: [id], onDelete: Cascade)
+  /// কোন প্রবলেম নিয়ে প্রশ্ন ("A", "B" … বা null = সাধারণ)
+  label      String?
+  question   String
+  answer     String?
+  /// true হলে সব প্রতিযোগী উত্তরটা দেখে
+  isPublic   Boolean   @default(false)
+  answeredAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([contestId, createdAt])
+  @@map("clarifications")
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  contestId String
+  contest   Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([contestId, createdAt])
+  @@map("announcements")
 }

@@ -91,6 +91,17 @@ export async function judgeRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const r = req.body;
+      // IOI কনটেস্ট: নম্বর = পাস করা টেস্ট ÷ মোট টেস্ট × ১০০
+      const sub = await prisma!.submission.findUnique({
+        where: { id: req.params.id },
+        select: { problemId: true, contest: { select: { scoring: true } } },
+      });
+      let score: number | null = null;
+      if (sub?.contest?.scoring === "IOI") {
+        const total = await prisma!.testCase.count({ where: { problemId: sub.problemId } });
+        const passed = r.tests.filter((t) => t.verdict === "AC").length;
+        score = r.verdict === "AC" ? 100 : total > 0 ? Math.floor((100 * passed) / total) : 0;
+      }
       // শুধু যে worker claim করেছে সে-ই লিখতে পারবে, আর শুধু একবার
       const updated = await prisma!.submission.updateMany({
         where: { id: req.params.id, claimToken: r.claimToken, verdict: "JUDGING" },
@@ -100,6 +111,7 @@ export async function judgeRoutes(app: FastifyInstance) {
           memoryKb: r.memoryKb,
           compileOutput: r.compileOutput ?? null,
           testResults: r.tests as object[],
+          score,
           claimToken: null,
           judgedAt: new Date(),
         },

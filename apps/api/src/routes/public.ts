@@ -24,15 +24,49 @@ function visibleProblem(slug: string, viewer: AuthUser | null): Prisma.ProblemWh
   return { slug, visibility: "PUBLIC" };
 }
 
-/** PUBLIC প্রবলেমের সাবমিশন সবাই দেখে; বাকিগুলো শুধু নিজের, প্রবলেমের author-এর আর admin-এর */
-function visibleSubmissions(viewer: AuthUser | null): Prisma.SubmissionWhereInput {
+/**
+ * কে কোন সাবমিশন দেখবে:
+ * - নিজের সবসময়; admin সব
+ * - কনটেস্টের বাইরের সাবমিশন: PUBLIC প্রবলেমের হলে সবাই, নাহলে প্রবলেমের author
+ * - কনটেস্টের সাবমিশন: কনটেস্টের author সবসময়; বাকিরা কনটেস্ট শেষ হলে
+ *   (public কনটেস্ট হলে সবাই, private হলে শুধু প্রতিযোগীরা) — চলাকালীন অন্যের verdict
+ *   দেখা গেলে freeze-এর মানে থাকে না
+ */
+export function visibleSubmissions(viewer: AuthUser | null): Prisma.SubmissionWhereInput {
   if (viewer?.role === "ADMIN") return {};
-  if (viewer) {
-    return {
-      OR: [{ problem: { visibility: "PUBLIC" } }, { userId: viewer.id }, { problem: { authorId: viewer.id } }],
-    };
-  }
-  return { problem: { visibility: "PUBLIC" } };
+  const now = new Date();
+  const practicePublic: Prisma.SubmissionWhereInput = { contestId: null, problem: { visibility: "PUBLIC" } };
+  const endedPublicContest: Prisma.SubmissionWhereInput = { contest: { isPublic: true, endsAt: { lte: now } } };
+  if (!viewer) return { OR: [practicePublic, endedPublicContest] };
+  return {
+    OR: [
+      { userId: viewer.id },
+      practicePublic,
+      { contestId: null, problem: { authorId: viewer.id } },
+      endedPublicContest,
+      { contest: { endsAt: { lte: now }, participants: { some: { userId: viewer.id } } } },
+      { contest: { authorId: viewer.id } },
+    ],
+  };
+}
+
+/** সাবমিশনগুলোর কনটেস্ট-লেবেল ("A", "B" …) খুঁজে বের করে */
+async function contestLabels(subs: { contestId: string | null; problemId: string }[]) {
+  const contestIds = [...new Set(subs.map((s) => s.contestId).filter((id): id is string => id !== null))];
+  if (!contestIds.length) return new Map<string, string>();
+  const rows = await prisma!.contestProblem.findMany({
+    where: { contestId: { in: contestIds } },
+    select: { contestId: true, problemId: true, label: true },
+  });
+  return new Map(rows.map((r) => [`${r.contestId}:${r.problemId}`, r.label]));
+}
+
+function contestRef(
+  s: { contestId: string | null; problemId: string; inContest: boolean; contest: { slug: string } | null },
+  labels: Map<string, string>,
+) {
+  if (!s.contestId || !s.contest) return null;
+  return { slug: s.contest.slug, label: labels.get(`${s.contestId}:${s.problemId}`) ?? "?", inContest: s.inContest };
 }
 
 export async function publicRoutes(app: FastifyInstance) {
@@ -112,7 +146,9 @@ export async function publicRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Querystring: { mine?: boolean; user?: string; problem?: string; cursor?: string; limit?: number } }>(
+  app.get<{
+    Querystring: { mine?: boolean; user?: string; problem?: string; contest?: string; cursor?: string; limit?: number };
+  }>(
     "/submissions",
     {
       schema: {
@@ -122,6 +158,7 @@ export async function publicRoutes(app: FastifyInstance) {
             mine: { type: "boolean" },
             user: { type: "string", maxLength: 40 },
             problem: { type: "string", maxLength: 100 },
+            contest: { type: "string", maxLength: 100 },
             cursor: { type: "string", maxLength: 40 },
             limit: { type: "integer", minimum: 1, maximum: 100 },
           },
@@ -140,6 +177,7 @@ export async function publicRoutes(app: FastifyInstance) {
           q.mine ? { userId: viewer!.id } : {},
           q.user ? { user: { username: q.user.toLowerCase() } } : {},
           q.problem ? { problem: { slug: q.problem } } : {},
+          q.contest ? { contest: { slug: q.contest } } : {},
         ],
       };
       const rows = await prisma!.submission.findMany({
@@ -154,13 +192,30 @@ export async function publicRoutes(app: FastifyInstance) {
           timeMs: true,
           memoryKb: true,
           createdAt: true,
+          problemId: true,
+          contestId: true,
+          inContest: true,
+          score: true,
+          contest: { select: { slug: true } },
           problem: { select: { slug: true, title: true } },
           user: { select: { username: true } },
         },
       });
+      const labels = await contestLabels(rows);
 
       const page: SubmissionPage = {
-        submissions: rows.slice(0, limit).map((s) => ({ ...s, createdAt: s.createdAt.toISOString() })),
+        submissions: rows.slice(0, limit).map((s) => ({
+          id: s.id,
+          problem: s.problem,
+          user: s.user,
+          language: s.language,
+          verdict: s.verdict,
+          timeMs: s.timeMs,
+          memoryKb: s.memoryKb,
+          contest: contestRef(s, labels),
+          score: s.score,
+          createdAt: s.createdAt.toISOString(),
+        })),
         nextCursor: rows.length > limit ? rows[limit - 1]!.id : null,
       };
       return page;
@@ -172,9 +227,14 @@ export async function publicRoutes(app: FastifyInstance) {
     // Private প্রবলেমের সাবমিশন (এমনকি verdict আর প্রবলেমের নামও) বাইরের কেউ দেখবে না
     const s = await prisma!.submission.findFirst({
       where: { AND: [{ id: req.params.id }, visibleSubmissions(viewer)] },
-      include: { problem: { select: { slug: true, title: true } }, user: { select: { username: true } } },
+      include: {
+        problem: { select: { slug: true, title: true } },
+        user: { select: { username: true } },
+        contest: { select: { slug: true } },
+      },
     });
     if (!s) return reply.code(404).send({ error: "Submission not found" });
+    const labels = await contestLabels([s]);
 
     // সোর্স কোড আর compiler output শুধু নিজের (বা Admin) — অন্যরা শুধু verdict দেখবে
     const canSeeCode = viewer !== null && (viewer.id === s.userId || viewer.role === "ADMIN");
@@ -190,6 +250,8 @@ export async function publicRoutes(app: FastifyInstance) {
       memoryKb: s.memoryKb,
       compileOutput: canSeeCode ? s.compileOutput : null,
       tests: (s.testResults as TestResult[] | null) ?? [],
+      contest: contestRef(s, labels),
+      score: s.score,
       createdAt: s.createdAt.toISOString(),
       judgedAt: s.judgedAt?.toISOString() ?? null,
     };

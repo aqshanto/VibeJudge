@@ -38,7 +38,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function process1(job: JudgeJob, slot: number): Promise<JudgeReport> {
   try {
     const problem = await problems.get(job.problem, slot);
-    const result = await judge(problem, { language: job.language, source: job.source }, { boxId: slot });
+    const result = await judge(problem, { language: job.language, source: job.source }, {
+      boxId: slot,
+      stopOnFirstFailure: !job.runAllTests,
+    });
     return { claimToken: job.claimToken, ...result };
   } catch (err) {
     // judge-এর নিজের সমস্যা — সাবমিশন যেন আটকে না থাকে, IE দিয়ে দিই

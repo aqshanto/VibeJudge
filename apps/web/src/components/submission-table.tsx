@@ -110,9 +110,11 @@ export function SubmissionTable({
                 {showUser && <td className="px-3 py-2">{s.user?.username ?? "—"}</td>}
                 {showProblem && (
                   <td className="px-3 py-2">
-                    <Link href={`/problems/${s.problem.slug}`} className="hover:underline">
+                    <Link href={problemHref(s)} className="hover:underline">
+                      {s.contest && <b className="mr-1">{s.contest.label}.</b>}
                       {s.problem.title}
                     </Link>
+                    {s.contest && !s.contest.inContest && <span className="ml-1.5 text-xs text-zinc-500">(practice)</span>}
                   </td>
                 )}
                 <td className="px-3 py-2 uppercase">{s.language}</td>
@@ -121,7 +123,10 @@ export function SubmissionTable({
                     <VerdictBadge verdict={s.verdict} />
                   </Link>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2">{s.timeMs !== null && s.verdict !== "CE" ? `${s.timeMs} ms` : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-2">
+                  {s.timeMs !== null && s.verdict !== "CE" ? `${s.timeMs} ms` : "—"}
+                  {s.score !== null && <span className="ml-2 font-medium">{s.score} pts</span>}
+                </td>
                 <td className="whitespace-nowrap px-3 py-2">
                   {s.memoryKb !== null && s.verdict !== "CE" ? formatMemory(s.memoryKb) : "—"}
                 </td>
@@ -137,6 +142,11 @@ export function SubmissionTable({
       )}
     </div>
   );
+}
+
+/** কনটেস্টের সাবমিশন হলে কনটেস্টের প্রবলেম পেজে (CONTEST প্রবলেম archive-এ দেখা যায় না) */
+export function problemHref(s: Pick<SubmissionRow, "problem" | "contest">): string {
+  return s.contest ? `/contests/${s.contest.slug}/problems/${s.contest.label}` : `/problems/${s.problem.slug}`;
 }
 
 function formatWhen(iso: string): string {

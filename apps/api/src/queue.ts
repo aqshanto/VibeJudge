@@ -63,7 +63,7 @@ async function tryClaim(workerName: string): Promise<JudgeJob | null> {
   const timeoutSec = CLAIM_TIMEOUT_MS / 1000;
 
   const rows = await prisma.$queryRaw<
-    { id: string; language: Language; source: string; problemId: string }[]
+    { id: string; language: Language; source: string; problemId: string; contestId: string | null }[]
   >`
     UPDATE "submissions"
     SET "verdict" = 'JUDGING', "workerName" = ${workerName}, "claimToken" = ${claimToken}, "claimedAt" = now()
@@ -75,11 +75,14 @@ async function tryClaim(workerName: string): Promise<JudgeJob | null> {
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING "id", "language"::text AS "language", "source", "problemId"`;
+    RETURNING "id", "language"::text AS "language", "source", "problemId", "contestId"`;
 
   const row = rows[0];
   if (!row) return null;
 
+  const contest = row.contestId
+    ? await prisma.contest.findUnique({ where: { id: row.contestId }, select: { scoring: true } })
+    : null;
   const problem = await prisma.problem.findUniqueOrThrow({
     where: { id: row.problemId },
     select: { id: true, dataVersion: true, timeLimitMs: true, memoryLimitKb: true, checkerSource: true },
@@ -90,6 +93,8 @@ async function tryClaim(workerName: string): Promise<JudgeJob | null> {
     claimToken,
     language: row.language,
     source: row.source,
+    // IOI-তে আংশিক নম্বরের জন্য সব টেস্ট চালাতে হয়
+    runAllTests: contest?.scoring === "IOI",
     problem: {
       id: problem.id,
       dataVersion: problem.dataVersion,

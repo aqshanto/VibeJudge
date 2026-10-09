@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { SubmissionView as Submission } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { VerdictBadge } from "../../verdict-badge";
+import { problemHref } from "@/components/submission-table";
 
 const POLL_MS = 1000;
 
@@ -44,9 +45,19 @@ export function SubmissionView({ id }: { id: string }) {
         <p className="text-sm text-zinc-500">
           Submission <span className="font-mono">{sub.id}</span>
           {sub.user && <> by {sub.user.username}</>} ·{" "}
-          <Link href={`/problems/${sub.problem.slug}`} className="text-sky-700 hover:underline dark:text-sky-400">
+          <Link href={problemHref(sub)} className="text-sky-700 hover:underline dark:text-sky-400">
+            {sub.contest && `${sub.contest.label}. `}
             {sub.problem.title}
           </Link>{" "}
+          {sub.contest && (
+            <>
+              ·{" "}
+              <Link href={`/contests/${sub.contest.slug}`} className="hover:underline">
+                contest
+              </Link>
+              {!sub.contest.inContest && " (practice)"}{" "}
+            </>
+          )}
           · {sub.language.toUpperCase()}
         </p>
         <div className="flex flex-wrap items-center gap-4">
@@ -58,6 +69,7 @@ export function SubmissionView({ id }: { id: string }) {
               {sub.timeMs} ms · {formatMemory(sub.memoryKb ?? 0)}
             </span>
           )}
+          {done && sub.score !== null && <span className="text-lg font-semibold">{sub.score} / 100</span>}
         </div>
       </header>
 

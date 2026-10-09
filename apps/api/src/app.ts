@@ -6,6 +6,7 @@ import type { HealthResponse } from "@vibejudge/shared";
 import { prisma } from "./db.js";
 import { env } from "./env.js";
 import { authRoutes } from "./routes/auth.js";
+import { contestRoutes } from "./routes/contests.js";
 import { authorProblemRoutes } from "./routes/author-problems.js";
 import { authorRoutes } from "./routes/authors.js";
 import { judgeRoutes } from "./routes/judge.js";
@@ -51,6 +52,7 @@ export async function buildApp() {
   await app.register(authorRoutes, { prefix: "/api" });
   await app.register(authorProblemRoutes, { prefix: "/api/author" });
   await app.register(publicRoutes, { prefix: "/api" });
+  await app.register(contestRoutes, { prefix: "/api" });
   await app.register(judgeRoutes, { prefix: "/api/judge" });
 
   return app;

@@ -47,6 +47,8 @@ export interface JudgeJob {
   claimToken: string;
   language: Language;
   source: string;
+  /** IOI: প্রথম ভুলে না থেমে সব টেস্ট চালাও (আংশিক নম্বরের জন্য) */
+  runAllTests: boolean;
   problem: {
     id: string;
     dataVersion: number;
@@ -95,6 +97,10 @@ export interface SubmissionView {
   memoryKb: number | null;
   compileOutput: string | null;
   tests: TestResult[];
+  /** কনটেস্টের ভেতর থেকে হলে: কোন কনটেস্ট, কোন লেবেল, আর standings-এ গোনা হবে কি না */
+  contest: { slug: string; label: string; inContest: boolean } | null;
+  /** IOI নম্বর (০-১০০) */
+  score: number | null;
   createdAt: string;
   judgedAt: string | null;
 }
@@ -108,6 +114,10 @@ export interface SubmissionRow {
   verdict: Verdict;
   timeMs: number | null;
   memoryKb: number | null;
+  /** কনটেস্টের ভেতর থেকে হলে: কোন কনটেস্ট, কোন লেবেল, আর standings-এ গোনা হবে কি না */
+  contest: { slug: string; label: string; inContest: boolean } | null;
+  /** IOI নম্বর (০-১০০) */
+  score: number | null;
   createdAt: string;
 }
 
@@ -220,6 +230,84 @@ export type ProblemUpdate = Partial<
 export interface TestUpload {
   mode: "replace" | "append";
   tests: { input: string; answer: string; isSample: boolean }[];
+}
+
+// ---------- Contests ----------
+
+export type ScoringType = "ICPC" | "IOI";
+export type ContestPhase = "UPCOMING" | "RUNNING" | "ENDED";
+
+export const CONTEST_LIMITS = {
+  durationMinutes: { min: 5, max: 14 * 24 * 60 },
+  penaltyMinutes: { min: 0, max: 120 },
+  maxProblems: 26,
+} as const;
+
+/** label: "A".."Z" */
+export const problemLabel = (index: number) => String.fromCharCode(65 + index);
+
+export function contestPhase(startsAt: string | Date, durationMinutes: number, now = Date.now()): ContestPhase {
+  const start = new Date(startsAt).getTime();
+  if (now < start) return "UPCOMING";
+  if (now < start + durationMinutes * 60_000) return "RUNNING";
+  return "ENDED";
+}
+
+export interface ContestSummary {
+  id: string;
+  slug: string;
+  title: string;
+  startsAt: string;
+  durationMinutes: number;
+  scoring: ScoringType;
+  isPublic: boolean;
+  author: string | null;
+  participantCount: number;
+}
+
+export interface ContestProblemRef {
+  label: string;
+  slug: string;
+  title: string;
+}
+
+/** GET /api/contests/:slug */
+export interface ContestDetail extends ContestSummary {
+  description: string;
+  penaltyMinutes: number;
+  freezeMinutes: number;
+  hasPassword: boolean;
+  /** সার্ভারের বর্তমান সময় — ব্রাউজারের ঘড়ি ভুল থাকলেও countdown ঠিক থাকে */
+  serverTime: string;
+  /** দেখার অনুমতি না থাকলে খালি (যেমন শুরুর আগে) */
+  problems: ContestProblemRef[];
+  viewer: {
+    registered: boolean;
+    /** author বা admin */
+    canManage: boolean;
+  };
+}
+
+/** POST/PATCH /api/contests */
+export interface ContestInput {
+  slug: string;
+  title: string;
+  description: string;
+  startsAt: string;
+  durationMinutes: number;
+  scoring: ScoringType;
+  penaltyMinutes: number;
+  freezeMinutes: number;
+  isPublic: boolean;
+  /** undefined = বদলাবে না, "" = পাসওয়ার্ড তুলে দাও */
+  password?: string;
+  /** প্রবলেমের slug, ক্রমানুসারে (A, B, C …) */
+  problemSlugs: string[];
+}
+
+export interface ContestProblemView extends ProblemView {
+  label: string;
+  contest: { slug: string; title: string; phase: ContestPhase };
 }
 
 export interface HealthResponse {
