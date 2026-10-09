@@ -8,6 +8,7 @@ import { prisma } from "./db.js";
 import { env } from "./env.js";
 import { adminUserRoutes } from "./routes/admin-users.js";
 import { authRoutes } from "./routes/auth.js";
+import { codeforcesRoutes } from "./routes/codeforces.js";
 import { contestMessageRoutes } from "./routes/contest-messages.js";
 import { contestRoutes } from "./routes/contests.js";
 import { plagiarismRoutes } from "./routes/plagiarism.js";
@@ -72,6 +73,7 @@ export async function buildApp() {
   await app.register(userRoutes, { prefix: "/api" });
   await app.register(teamRoutes, { prefix: "/api" });
   await app.register(ratingRoutes, { prefix: "/api" });
+  await app.register(codeforcesRoutes, { prefix: "/api" });
   await app.register(adminUserRoutes, { prefix: "/api" });
   await app.register(judgeRoutes, { prefix: "/api/judge" });
 

@@ -31,6 +31,7 @@ import {
 } from "../contest-access.js";
 import { notifyWork } from "../queue.js";
 import { forgetTeammates } from "../teammates.js";
+import { codeforcesUrl, parseCodeforcesRef } from "../codeforces.js";
 import { cachedStandings, computeStandings } from "../standings.js";
 
 const SLUG_RE = new RegExp(SLUG_PATTERN);
@@ -122,18 +123,20 @@ async function validateInput(
     return { error: "The window must be at least as long as each participant's time" };
   }
 
-  // Author নিজের প্রবলেম বা Public প্রবলেম নিতে পারে; Admin যেকোনো
+  // Author নিজের প্রবলেম, Public প্রবলেম বা Codeforces-এর প্রবলেম নিতে পারে; Admin যেকোনো
   const problems = await prisma!.problem.findMany({
     where: {
       slug: { in: input.problemSlugs },
-      ...(user.role === "ADMIN" ? {} : { OR: [{ authorId: user.id }, { visibility: "PUBLIC" }] }),
+      ...(user.role === "ADMIN"
+        ? {}
+        : { OR: [{ authorId: user.id }, { visibility: "PUBLIC" }, { source: "CODEFORCES" }] }),
     },
-    select: { id: true, slug: true, _count: { select: { tests: true } } },
+    select: { id: true, slug: true, source: true, _count: { select: { tests: true } } },
   });
   const bySlug = new Map(problems.map((p) => [p.slug, p]));
   const missing = input.problemSlugs.filter((s) => !bySlug.has(s));
   if (missing.length) return { error: `Problem not found or not yours: ${missing.join(", ")}` };
-  const noTests = problems.filter((p) => p._count.tests === 0).map((p) => p.slug);
+  const noTests = problems.filter((p) => p.source === "LOCAL" && p._count.tests === 0).map((p) => p.slug);
   if (noTests.length) return { error: `These problems have no tests yet: ${noTests.join(", ")}` };
 
   const startsAt = new Date(input.startsAt);
@@ -229,7 +232,12 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
     ratedAt: contest.ratedAt?.toISOString() ?? null,
     serverTime: new Date().toISOString(),
     problems: access.canSeeProblems
-      ? contest.problems.map((cp) => ({ label: cp.label, slug: cp.problem.slug, title: cp.problem.title }))
+      ? contest.problems.map((cp) => ({
+          label: cp.label,
+          slug: cp.problem.slug,
+          title: cp.problem.title,
+          remoteRef: cp.problem.source === "CODEFORCES" ? cp.problem.remoteId : null,
+        }))
       : [],
     viewer: {
       registered: access.registered,
@@ -245,6 +253,13 @@ async function detail(req: FastifyRequest, contest: LoadedContest): Promise<Cont
 }
 
 type SlugParams = { Params: { slug: string } };
+
+/** অন্য OJ-এর প্রবলেম হলে লিংক */
+export function remoteOf(p: { source: string; remoteId: string | null }): ContestProblemView["remote"] {
+  if (p.source !== "CODEFORCES" || !p.remoteId) return null;
+  const ref = parseCodeforcesRef(p.remoteId);
+  return ref ? { source: "CODEFORCES", ref: p.remoteId, url: codeforcesUrl(ref) } : null;
+}
 
 // কনটেস্টে ১০০০ জন A/B/C-র মধ্যে বারবার যায় — প্রতিবার DB থেকে স্টেটমেন্ট আর sample না এনে
 // ৩০ সেকেন্ড মনে রাখি (একসাথে অনেকে চাইলে একটাই query)। author স্টেটমেন্ট ঠিক করলে ≤৩০ সে. পরে দেখায়।
@@ -272,6 +287,7 @@ function problemBody(problemId: string): Promise<ProblemBody> {
         input: Buffer.from(t.input).toString("utf8"),
         answer: Buffer.from(t.answer).toString("utf8"),
       })),
+      remote: remoteOf(problem),
     }))
     .catch((err) => {
       problemCache.delete(problemId);
@@ -821,6 +837,9 @@ export async function contestRoutes(app: FastifyInstance) {
       }
       const cp = contest.problems.find((p) => p.label === req.body.label.toUpperCase());
       if (!cp) return reply.code(404).send({ error: "Problem not found" });
+      if (cp.problem.source === "CODEFORCES") {
+        return reply.code(400).send({ error: "Submit this problem on Codeforces — your result is picked up from there" });
+      }
       // শেষ হওয়ার পর (upsolve) যেকোনো ভাষা; তার আগে শুধু author-এর বাছাই করা ভাষা
       if (access.phase !== "ENDED" && !contest.languages.includes(req.body.language)) {
         const allowed = contest.languages.map((l) => LANGUAGE_INFO[l].short).join(", ");

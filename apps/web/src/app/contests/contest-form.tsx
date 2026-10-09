@@ -65,6 +65,27 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
   const [problems, setProblems] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pick, setPick] = useState("");
+  const [cfRef, setCfRef] = useState("");
+  const [cfBusy, setCfBusy] = useState(false);
+  const [cfError, setCfError] = useState<string | null>(null);
+
+  // Codeforces-এর প্রবলেম: কোড বা লিংক দিলে API নাম খুঁজে প্রবলেম বানায় (আগে থাকলে সেটাই)
+  async function addCodeforces() {
+    setCfBusy(true);
+    setCfError(null);
+    try {
+      const p = await api<{ slug: string; title: string; ref: string }>("/author/problems/codeforces", {
+        method: "POST",
+        body: { ref: cfRef },
+      });
+      setCandidates((cs) => (cs.some((c) => c.slug === p.slug) ? cs : [...cs, { slug: p.slug, title: p.title, note: `Codeforces ${p.ref}` }]));
+      setProblems((ps) => (ps.includes(p.slug) ? ps : [...ps, p.slug]));
+      setCfRef("");
+    } catch (e) {
+      setCfError((e as Error).message);
+    }
+    setCfBusy(false);
+  }
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -388,6 +409,31 @@ export function ContestForm({ slug: editSlug }: { slug?: string }) {
             >
               Add
             </button>
+          </div>
+        )}
+        {problems.length < CONTEST_LIMITS.maxProblems && (
+          <div className="flex flex-col gap-1">
+            <div className="flex gap-2">
+              <input
+                className={`${inputClass} flex-1`}
+                value={cfRef}
+                onChange={(e) => setCfRef(e.target.value)}
+                placeholder='From Codeforces: "1850A" or a problem link'
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (cfRef.trim()) void addCodeforces();
+                  }
+                }}
+              />
+              <button type="button" className={secondaryButtonClass} disabled={!cfRef.trim() || cfBusy} onClick={addCodeforces}>
+                {cfBusy ? "Finding…" : "Add"}
+              </button>
+            </div>
+            <ErrorText>{cfError}</ErrorText>
+            <p className="text-xs text-zinc-500">
+              Students solve Codeforces problems on Codeforces with their linked handle; results come in automatically.
+            </p>
           </div>
         )}
         <p className="text-xs text-zinc-500">

@@ -10,6 +10,7 @@ import { ErrorText, Field, buttonClass, inputClass, secondaryButtonClass } from 
 import { SubmissionTable } from "@/components/submission-table";
 import { PhaseBadge } from "../../contests/phase-badge";
 import { Heatmap } from "./heatmap";
+import { CodeforcesLink } from "./codeforces-link";
 import { RatingChart, RatingDelta, ratingTextClass } from "@/components/rating";
 import { AdminResetPassword, ChangePassword } from "./password-forms";
 
@@ -64,6 +65,27 @@ export function Profile({ username }: { username: string }) {
         />
       )}
 
+      {profile.isMe ? (
+        <CodeforcesLink
+          handle={profile.cfHandle}
+          verify={profile.cfVerify}
+          onChange={(cfHandle, cfVerify) => setProfile({ ...profile, cfHandle, cfVerify })}
+        />
+      ) : (
+        profile.cfHandle && (
+          <p className="text-sm">
+            Codeforces:{" "}
+            <a
+              href={`https://codeforces.com/profile/${profile.cfHandle}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline"
+            >
+              {profile.cfHandle} ↗
+            </a>
+          </p>
+        )
+      )}
       {profile.isMe && profile.hasPassword !== null && <ChangePassword hasPassword={profile.hasPassword} />}
       {!profile.isMe && viewer?.role === "ADMIN" && <AdminResetPassword username={profile.username} />}
 

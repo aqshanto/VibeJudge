@@ -29,7 +29,13 @@ async function managedContest(req: FastifyRequest<{ Params: { slug: string } }>,
 async function buildReport(contest: LoadedContest, minSimilarity: number): Promise<PlagiarismReport> {
   // কনটেস্ট চলাকালীন (standings-এ গোনা) সাবমিশন; CE/IE আর judge না হওয়াগুলো বাদ
   const subs = await prisma!.submission.findMany({
-    where: { contestId: contest.id, inContest: true, verdict: { notIn: ["PENDING", "JUDGING", "CE", "IE"] } },
+    // Codeforces থেকে আনা সাবমিশনে কোড নেই (শুধু লিংক) — বাদ
+    where: {
+      contestId: contest.id,
+      inContest: true,
+      remoteId: null,
+      verdict: { notIn: ["PENDING", "JUDGING", "CE", "IE"] },
+    },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,

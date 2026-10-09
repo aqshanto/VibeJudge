@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ProblemBody, SubmitForm } from "@/components/problem-parts";
 import { SubmissionTable } from "@/components/submission-table";
+import { buttonClass, secondaryButtonClass } from "@/components/ui";
 import { ContestHeader } from "../../contest-header";
 import { useContest } from "../../use-contest";
 
@@ -62,6 +63,15 @@ export function ContestProblem({ slug, label }: { slug: string; label: string })
             titlePrefix={problem.label}
             languages={phase === "ENDED" ? undefined : contest.languages}
           />
+          {problem.remote ? (
+            <RemoteSubmit
+              contestSlug={contest.slug}
+              url={problem.remote.url}
+              refName={problem.remote.ref}
+              loggedIn={user !== null}
+              onImported={() => setRefresh((n) => n + 1)}
+            />
+          ) : (
           <SubmitForm
             draftId={`${contest.slug}/${problem.label}`}
             languages={phase === "ENDED" ? undefined : contest.languages}
@@ -84,6 +94,7 @@ export function ContestProblem({ slug, label }: { slug: string; label: string })
               return id;
             }}
           />
+          )}
           {user && (
             <section className="flex flex-col gap-3">
               <h2 className="text-lg font-semibold">My submissions to {problem.label}</h2>
@@ -99,5 +110,63 @@ export function ContestProblem({ slug, label }: { slug: string; label: string })
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Codeforces-এর প্রবলেম: সেখানে জমা দিতে হয়; ফল এখানে নিজে থেকে আসে (~১ মিনিটে),
+ * বা "Check now" চাপলে সাথে সাথে।
+ */
+function RemoteSubmit({
+  contestSlug,
+  url,
+  refName,
+  loggedIn,
+  onImported,
+}: {
+  contestSlug: string;
+  url: string;
+  refName: string;
+  loggedIn: boolean;
+  onImported: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+
+  async function check() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { changed } = await api<{ changed: number }>(`/contests/${contestSlug}/codeforces/sync`, { method: "POST" });
+      setMessage({ ok: true, text: changed ? `Found ${changed} new or updated submission(s).` : "No new submissions found." });
+      if (changed) onImported();
+    } catch (e) {
+      setMessage({ ok: false, text: (e as Error).message });
+    }
+    setBusy(false);
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4 text-sm">
+      <h2 className="text-lg font-semibold">Solve on Codeforces</h2>
+      <p>
+        Read the statement and submit on Codeforces with <b>your linked Codeforces account</b>. Submissions made during
+        the contest are picked up here automatically (about once a minute) and count in the standings.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <a href={url} target="_blank" rel="noopener noreferrer" className={buttonClass}>
+          Open {refName} on Codeforces ↗
+        </a>
+        {loggedIn && (
+          <button type="button" disabled={busy} className={secondaryButtonClass} onClick={check}>
+            {busy ? "Checking…" : "Check my Codeforces submissions now"}
+          </button>
+        )}
+      </div>
+      {message && <p className={message.ok ? "text-zinc-600 dark:text-zinc-400" : "text-red-600"}>{message.text}</p>}
+      <p className="text-xs text-zinc-500">
+        No Codeforces handle linked yet? Link it from your profile page first (takes a minute).
+      </p>
+    </section>
   );
 }

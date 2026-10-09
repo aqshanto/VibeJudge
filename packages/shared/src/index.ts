@@ -174,6 +174,15 @@ export interface ProblemView {
   timeLimitMs: number;
   memoryLimitKb: number;
   samples: { input: string; answer: string }[];
+  /** অন্য OJ-এর প্রবলেম হলে (স্টেটমেন্ট সেখানে, জমাও সেখানে) */
+  remote?: RemoteProblem | null;
+}
+
+export interface RemoteProblem {
+  source: "CODEFORCES";
+  /** যেমন "1850A" */
+  ref: string;
+  url: string;
 }
 
 // ---------- Auth ----------
@@ -354,6 +363,8 @@ export interface ContestProblemRef {
   label: string;
   slug: string;
   title: string;
+  /** Codeforces-এর প্রবলেম হলে "1850A" */
+  remoteRef?: string | null;
 }
 
 /** GET /api/contests/:slug */
@@ -564,6 +575,10 @@ export interface UserProfile {
   participatedContests: ContestSummary[];
   /** যে টিমগুলোর সদস্য (Accept করা) */
   teams: { slug: string; name: string }[];
+  /** যাচাই করা Codeforces handle */
+  cfHandle: string | null;
+  /** শুধু নিজের প্রোফাইলে: যাচাই চলছে */
+  cfVerify: CodeforcesVerify | null;
   /** rated কনটেস্টে না থাকলে null */
   rating: number | null;
   maxRating: number | null;
@@ -674,4 +689,14 @@ export type RatingColor = (typeof RATING_TIERS)[number]["color"];
 
 export function ratingTier(rating: number): (typeof RATING_TIERS)[number] {
   return RATING_TIERS.find((t) => rating >= t.min)!;
+}
+
+// ---------- Codeforces ----------
+
+/** handle যাচাই: এই প্রবলেমে compile error জমা দিতে হবে, expiresAt-এর আগে */
+export interface CodeforcesVerify {
+  handle: string;
+  problem: string;
+  url: string;
+  expiresAt: string;
 }

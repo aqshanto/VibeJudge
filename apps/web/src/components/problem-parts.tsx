@@ -40,6 +40,17 @@ export function ProblemBody({
   languages?: readonly Language[];
 }) {
   const slower = slowerLanguageLimits(problem.timeLimitMs, languages);
+  if (problem.remote) {
+    return (
+      <header>
+        <h1 className="text-3xl font-semibold">
+          {titlePrefix && <span className="mr-2 text-zinc-500">{titlePrefix}.</span>}
+          {problem.title}
+        </h1>
+        <p className="mt-1 text-sm text-zinc-500">Codeforces {problem.remote.ref}</p>
+      </header>
+    );
+  }
   return (
     <>
       <header>

@@ -24,7 +24,7 @@ export async function loadContest(slug: string) {
     include: {
       problems: {
         orderBy: { label: "asc" },
-        include: { problem: { select: { id: true, slug: true, title: true } } },
+        include: { problem: { select: { id: true, slug: true, title: true, source: true, remoteId: true } } },
       },
       author: { select: { username: true } },
       _count: { select: { participants: { where: { virtual: false } } } },

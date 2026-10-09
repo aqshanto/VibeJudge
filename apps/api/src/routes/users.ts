@@ -5,6 +5,7 @@ import { requireUser } from "../auth/guards.js";
 import { getSessionUser, invalidateUserSessions, revokeSessions, toAuthUser } from "../auth/session.js";
 import { generatePassword, hashPassword, verifyPassword } from "../auth/password.js";
 import { toSummary } from "./contests.js";
+import { verifyView } from "./codeforces.js";
 
 const CONTEST_INCLUDE = {
   problems: { include: { problem: { select: { id: true, slug: true, title: true } } } },
@@ -82,6 +83,8 @@ export async function userRoutes(app: FastifyInstance) {
       authoredContests: authored.map(toSummary),
       participatedContests: participated.map(toSummary),
       teams,
+      cfHandle: user.cfHandle,
+      cfVerify: isMe ? verifyView(user) : null,
       rating: user.rating,
       maxRating: user.maxRating,
       ratingHistory: ratingHistory.map((r) => ({

@@ -99,6 +99,11 @@ export function ContestOverview({ slug }: { slug: string }) {
                       >
                         {p.title}
                       </Link>
+                      {p.remoteRef && (
+                        <span className="ml-2 rounded bg-sky-500/15 px-1.5 py-0.5 text-xs text-sky-700 dark:text-sky-300">
+                          Codeforces {p.remoteRef}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

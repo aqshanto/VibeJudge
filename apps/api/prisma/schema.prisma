@@ -19,21 +19,27 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique // সবসময় lowercase
-  username     String   @unique // সবসময় lowercase: a-z, 0-9, _ . -
-  displayName  String?
-  passwordHash String? // শুধু Google দিয়ে খোলা অ্যাকাউন্টে null
-  googleId     String?  @unique
-  role         Role     @default(USER)
-  institution  String?
-  batch        String?
-  section      String?
+  id                String    @id @default(cuid())
+  email             String    @unique // সবসময় lowercase
+  username          String    @unique // সবসময় lowercase: a-z, 0-9, _ . -
+  displayName       String?
+  passwordHash      String? // শুধু Google দিয়ে খোলা অ্যাকাউন্টে null
+  googleId          String?   @unique
+  role              Role      @default(USER)
+  institution       String?
+  batch             String?
+  section           String?
+  /// যাচাই করা Codeforces handle (ছোট হাতের অক্ষরে নয় — Codeforces যেমন দেখায়)
+  cfHandle          String?   @unique
+  /// যাচাই চলাকালীন: কোন handle, কোন প্রবলেমে compile error দিতে হবে, কখন শুরু
+  cfVerifyHandle    String?
+  cfVerifyProblem   String?
+  cfVerifyStartedAt DateTime?
   /// rated কনটেস্টে অংশ না নিলে null (শুরু ধরা হয় ১৫০০)
-  rating       Int?
-  maxRating    Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rating            Int?
+  maxRating         Int?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   problems         Problem[]
   submissions      Submission[]
@@ -149,27 +155,36 @@ enum Verdict {
   IE
 }
 
+enum ProblemSource {
+  LOCAL // আমাদের judge-এ (টেস্ট সহ)
+  CODEFORCES // Codeforces-এ জমা হয়, আমরা ফল পড়ি
+}
+
 model Problem {
-  id            String     @id @default(cuid())
-  slug          String     @unique
+  id            String        @id @default(cuid())
+  slug          String        @unique
   title         String
+  source        ProblemSource @default(LOCAL)
+  /// অন্য OJ-এর প্রবলেম কোড, যেমন Codeforces-এর "1850A"
+  remoteId      String?
   statement     String // Markdown + LaTeX
-  timeLimitMs   Int        @default(1000)
-  memoryLimitKb Int        @default(262144)
+  timeLimitMs   Int           @default(1000)
+  memoryLimitKb Int           @default(262144)
   /// testlib checker-এর C++ সোর্স; null হলে token compare
   checkerSource String?
-  visibility    Visibility @default(PRIVATE)
+  visibility    Visibility    @default(PRIVATE)
   /// টেস্ট বা checker বদলালে বাড়ে — worker তখন cache ফেলে নতুন ডাটা নামায়
-  dataVersion   Int        @default(1)
+  dataVersion   Int           @default(1)
   authorId      String?
-  author        User?      @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  author        User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   tests           TestCase[]
   submissions     Submission[]
   contestProblems ContestProblem[]
 
+  @@unique([source, remoteId])
   @@map("problems")
 }
 
@@ -210,13 +225,17 @@ model Submission {
   createdAt     DateTime  @default(now())
 
   /// কনটেস্টের ভেতর থেকে করা হলে
-  contestId String?
-  contest   Contest? @relation(fields: [contestId], references: [id], onDelete: SetNull)
+  contestId      String?
+  contest        Contest? @relation(fields: [contestId], references: [id], onDelete: SetNull)
   /// কনটেস্ট চলাকালীন রেজিস্টার করা প্রতিযোগীর সাবমিশন — শুধু এগুলোই standings-এ গোনা হয়
   /// (কনটেস্টের পরে করা = upsolve, false)
-  inContest Boolean  @default(false)
+  inContest      Boolean  @default(false)
   /// IOI: পাস করা টেস্ট ÷ মোট টেস্ট × ১০০
-  score     Int?
+  score          Int?
+  /// অন্য OJ থেকে আনা হলে তার সাবমিশন id (যেমন "cf:392217392") — একই সাবমিশন দুবার আসে না
+  remoteId       String?  @unique
+  /// অন্য OJ-এ যে ভাষায় জমা (যেমন "GNU C++20 (64)")
+  remoteLanguage String?
 
   @@index([verdict, createdAt])
   @@index([problemId, createdAt])

@@ -18,6 +18,7 @@ import { requireUser } from "../auth/guards.js";
 import { SESSION_COOKIE, getSessionUser } from "../auth/session.js";
 import { loadContestCached } from "../contest-access.js";
 import { teammatesOf } from "../teammates.js";
+import { remoteOf } from "./contests.js";
 
 /** PUBLIC সবাই দেখে; PRIVATE/CONTEST শুধু তার author আর admin (প্রকাশের আগে যাচাইয়ের জন্য) */
 function visibleProblem(slug: string, viewer: AuthUser | null): Prisma.ProblemWhereInput {
@@ -115,6 +116,7 @@ export async function publicRoutes(app: FastifyInstance) {
         input: Buffer.from(t.input).toString("utf8"),
         answer: Buffer.from(t.answer).toString("utf8"),
       })),
+      remote: remoteOf(problem),
     };
     return view;
   });
@@ -151,9 +153,10 @@ export async function publicRoutes(app: FastifyInstance) {
       }
       const problem = await prisma!.problem.findFirst({
         where: visibleProblem(problemSlug, user),
-        select: { id: true },
+        select: { id: true, source: true },
       });
       if (!problem) return reply.code(404).send({ error: "Problem not found" });
+      if (problem.source !== "LOCAL") return reply.code(400).send({ error: "Submit this problem on Codeforces" });
 
       const submission = await prisma!.submission.create({
         data: { problemId: problem.id, userId: user.id, language, source },
