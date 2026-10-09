@@ -7,11 +7,13 @@ import type { HealthResponse } from "@vibejudge/shared";
 import { prisma } from "./db.js";
 import { env } from "./env.js";
 import { authRoutes } from "./routes/auth.js";
+import { contestMessageRoutes } from "./routes/contest-messages.js";
 import { contestRoutes } from "./routes/contests.js";
 import { authorProblemRoutes } from "./routes/author-problems.js";
 import { authorRoutes } from "./routes/authors.js";
 import { judgeRoutes } from "./routes/judge.js";
 import { publicRoutes } from "./routes/public.js";
+import { userRoutes } from "./routes/users.js";
 
 export async function buildApp() {
   // Vercel আর Render দুটোই proxy — আসল ইউজারের IP X-Forwarded-For-এ থাকে
@@ -56,6 +58,8 @@ export async function buildApp() {
   await app.register(authorProblemRoutes, { prefix: "/api/author" });
   await app.register(publicRoutes, { prefix: "/api" });
   await app.register(contestRoutes, { prefix: "/api" });
+  await app.register(contestMessageRoutes, { prefix: "/api" });
+  await app.register(userRoutes, { prefix: "/api" });
   await app.register(judgeRoutes, { prefix: "/api/judge" });
 
   return app;

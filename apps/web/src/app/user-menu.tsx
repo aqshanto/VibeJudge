@@ -42,14 +42,14 @@ export function UserMenu() {
           Become an author
         </Link>
       )}
-      <span className="font-medium">
+      <Link href={`/users/${user.username}`} className="font-medium hover:underline">
         {user.username}
         {user.role !== "USER" && (
           <span className="ml-1.5 rounded bg-sky-600/15 px-1.5 py-0.5 text-xs text-sky-700 dark:text-sky-300">
             {user.role.toLowerCase()}
           </span>
         )}
-      </span>
+      </Link>
       <button
         type="button"
         className={linkClass}

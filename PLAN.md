@@ -197,19 +197,23 @@ VibeJudge/
       ১০০০টা একসাথে request: আগে ~৩৯ সে. → এখন সার্ভারে প্রতি request <১ ms
 - [ ] লাইভ Render-এ (০.১ CPU) k6 দিয়ে আসল load test — ফেজ ৫
 - [ ] Section/Batch অনুযায়ী standings ফিল্টার, CSV এক্সপোর্ট — ফেজ ৪
-- [ ] লাইভ Standings (প্রতি ১৫-৩০ সেকেন্ডে রিফ্রেশ, cached) + Freeze
-- [ ] Clarification + Announcement
-- [ ] কনটেস্ট শেষে Upsolve
-- [ ] প্রোফাইলে Authored ও Participated কনটেস্ট
 
-### 🎯 এখানে স্যারকে ডেমো (~৬-৮ সপ্তাহ)
+**৩গ — মেসেজ ও প্রোফাইল ✅**
+- [x] Clarification: প্রতিযোগী প্রশ্ন করে (প্রবলেম বা সাধারণ); author উত্তর দেয়, চাইলে সবার জন্য; "No comment" এক ক্লিকে
+- [x] Announcement: সব পেজের উপরে 📢 ব্যানার + Messages-এ নতুনের ব্যাজ (author-এর জন্য: উত্তর বাকি প্রশ্নের সংখ্যা)
+- [x] মেসেজ ৫ সে. cache, প্রত্যেক দর্শকের জন্য memory-তে ছেঁকে দেওয়া (১০০০ জনের পোলিং-এ DB চাপ নেই)
+- [x] কনটেস্ট শেষে Upsolve (৩ক-তে হয়েছে)
+- [x] প্রোফাইল (`/users/:username`): সলভ, পরিসংখ্যান, Authored ও Participated কনটেস্ট, সাম্প্রতিক সাবমিশন
+- [x] নিজের নাম / Institution / Batch / Section এডিট
+
+### 🎯 এখানে স্যারকে ডেমো (~৬-৮ সপ্তাহ) — প্রস্তুত ✅
 
 ### ফেজ ৪ — ল্যাব ফাইনাল ফিচার (সপ্তাহ ৭-৮)
 - [ ] Admin বাল্ক অ্যাকাউন্ট (CSV আপলোড → ID/পাসওয়ার্ড)
 - [ ] Institution / Batch / Section + Standings ফিল্টার
 - [ ] Standings CSV/Excel এক্সপোর্ট (মার্কস দেওয়ার জন্য)
 - [ ] Plagiarism রিপোর্ট (Dolos)
-- [ ] প্রোফাইল: Solved, সাবমিশন হিস্ট্রি, Heatmap
+- [ ] প্রোফাইলে Heatmap (Solved আর সাবমিশন হিস্ট্রি ৩গ-তে হয়েছে)
 
 ### ফেজ ৫ — ডেমোর পরে
 - [ ] Virtual participation, Window contest

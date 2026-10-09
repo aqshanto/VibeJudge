@@ -345,9 +345,61 @@ export interface StandingsView {
   generatedAt: string;
 }
 
+export interface AnnouncementView {
+  id: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface ClarificationView {
+  id: string;
+  /** কোন প্রবলেম নিয়ে ("A" …) বা null = সাধারণ */
+  label: string | null;
+  question: string;
+  answer: string | null;
+  isPublic: boolean;
+  /** শুধু manager আর প্রশ্নকারী নিজে দেখে */
+  askedBy: string | null;
+  mine: boolean;
+  createdAt: string;
+  answeredAt: string | null;
+}
+
+/** GET /api/contests/:slug/messages */
+export interface ContestMessages {
+  announcements: AnnouncementView[];
+  clarifications: ClarificationView[];
+}
+
 export interface ContestProblemView extends ProblemView {
   label: string;
   contest: { slug: string; title: string; phase: ContestPhase };
+}
+
+// ---------- Users ----------
+
+export interface UserProfile {
+  username: string;
+  displayName: string | null;
+  institution: string | null;
+  batch: string | null;
+  section: string | null;
+  role: Role;
+  joinedAt: string;
+  stats: { solved: number; submissions: number; accepted: number };
+  /** Public প্রবলেম যেগুলো সলভ করেছে */
+  solvedProblems: { slug: string; title: string }[];
+  authoredContests: ContestSummary[];
+  participatedContests: ContestSummary[];
+  /** নিজের প্রোফাইল হলে true (এডিট করা যায়) */
+  isMe: boolean;
+}
+
+export interface ProfileUpdate {
+  displayName?: string;
+  institution?: string;
+  batch?: string;
+  section?: string;
 }
 
 export interface HealthResponse {

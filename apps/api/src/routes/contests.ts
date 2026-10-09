@@ -72,7 +72,7 @@ const CONTEST_BODY = {
   },
 } as const;
 
-function toSummary(c: LoadedContest): ContestSummary {
+export function toSummary(c: LoadedContest): ContestSummary {
   return {
     id: c.id,
     slug: c.slug,
