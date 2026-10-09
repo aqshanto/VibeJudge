@@ -4,15 +4,24 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   LANGUAGES,
   MAX_SOURCE_BYTES,
+  type AuthUser,
   type Language,
   type ProblemView,
   type SubmissionView,
   type TestResult,
 } from "@vibejudge/shared";
+import type { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../db.js";
 import { notifyWork } from "../queue.js";
 import { requireUser } from "../auth/guards.js";
 import { SESSION_COOKIE, getSessionUser } from "../auth/session.js";
+
+/** PUBLIC সবাই দেখে; PRIVATE/CONTEST শুধু তার author আর admin (প্রকাশের আগে যাচাইয়ের জন্য) */
+function visibleProblem(slug: string, viewer: AuthUser | null): Prisma.ProblemWhereInput {
+  if (viewer?.role === "ADMIN") return { slug };
+  if (viewer) return { slug, OR: [{ visibility: "PUBLIC" }, { authorId: viewer.id }] };
+  return { slug, visibility: "PUBLIC" };
+}
 
 export async function publicRoutes(app: FastifyInstance) {
   app.get("/problems", async () => {
@@ -25,7 +34,7 @@ export async function publicRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { slug: string } }>("/problems/:slug", async (req, reply) => {
     const problem = await prisma!.problem.findFirst({
-      where: { slug: req.params.slug, visibility: "PUBLIC" },
+      where: visibleProblem(req.params.slug, await getSessionUser(req)),
       include: { tests: { where: { isSample: true }, orderBy: { ordinal: "asc" } } },
     });
     if (!problem) return reply.code(404).send({ error: "Problem not found" });
@@ -34,6 +43,7 @@ export async function publicRoutes(app: FastifyInstance) {
       id: problem.id,
       slug: problem.slug,
       title: problem.title,
+      visibility: problem.visibility,
       statement: problem.statement,
       timeLimitMs: problem.timeLimitMs,
       memoryLimitKb: problem.memoryLimitKb,
@@ -76,7 +86,7 @@ export async function publicRoutes(app: FastifyInstance) {
         return reply.code(413).send({ error: `Source code is larger than ${MAX_SOURCE_BYTES / 1024} KB` });
       }
       const problem = await prisma!.problem.findFirst({
-        where: { slug: problemSlug, visibility: "PUBLIC" },
+        where: visibleProblem(problemSlug, user),
         select: { id: true },
       });
       if (!problem) return reply.code(404).send({ error: "Problem not found" });

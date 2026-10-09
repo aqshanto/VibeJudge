@@ -27,6 +27,11 @@ export function UserMenu() {
 
   return (
     <div className="ml-auto flex items-center gap-4">
+      {user.role !== "USER" && (
+        <Link href="/author/problems" className={linkClass}>
+          My problems
+        </Link>
+      )}
       {user.role === "ADMIN" && (
         <Link href="/admin" className={linkClass}>
           Admin

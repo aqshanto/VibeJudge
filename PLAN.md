@@ -159,12 +159,19 @@ VibeJudge/
 - [x] Rate limit ল্যাব-বান্ধব: IP না, session/অ্যাকাউন্ট ধরে (১০০০ জন একই IP শেয়ার করে)
 - [ ] ইমেইল ভেরিফিকেশন / পাসওয়ার্ড রিসেট — নিজস্ব ডোমেইন পেলে (Resend)
 
-**২খ — প্রবলেম বানানো**
-- [ ] প্রবলেম বানানো: স্টেটমেন্ট (Markdown+LaTeX), sample, টেস্ট আপলোড, time/memory limit, checker
-- [ ] Visibility: Private / Contest-only / Public
+**২খ — প্রবলেম বানানো ✅**
+- [x] "My problems" পেজ + নতুন প্রবলেম (Author নিজেরটা, Admin সবারটা দেখে)
+- [x] এডিটর: Statement (Markdown + LaTeX, লাইভ preview), Settings, Tests, Checker
+- [x] টেস্ট আপলোড: zip/আলাদা ফাইল, `1.in`+`1.out`/`.ans`, Polygon `01`+`01.a`; বড় সেট ভাগে ভাগে যায়
+- [x] Sample বাছাই, টেস্ট মুছলে নম্বর ঠিক থাকে, টেস্ট/checker বদলালে worker cache নতুন হয়
+- [x] Visibility: Private / Contest / Public; টেস্ট ছাড়া Public করা যায় না
+- [x] Private প্রবলেমে author নিজে সাবমিট করে যাচাই করতে পারে
+- [ ] বড় টেস্ট (প্রতি ফাইল > ২.৫ MB) — Cloudflare R2-তে সরাসরি আপলোড
+- [ ] প্রবলেম মুছে ফেলা / কপি করা
 
 **২গ — এডিটর ও তালিকা**
-- [ ] Monaco editor, স্টেটমেন্টে Markdown + LaTeX রেন্ডার
+- [x] স্টেটমেন্টে Markdown + LaTeX রেন্ডার (২খ-তে হয়েছে)
+- [ ] Monaco editor
 - [ ] আমার সাবমিশনের তালিকা, প্রবলেম অনুযায়ী সাবমিশন
 - [x] Problem Archive পেজ + প্র্যাকটিস সাবমিট (১খ-তে হয়েছে)
 - [x] সাবমিশন পেজ (লাইভ verdict)

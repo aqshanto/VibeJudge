@@ -58,6 +58,10 @@ export const COMPILE_BOX_OFFSET = 500;
 
 export async function judge(problem: ProblemSpec, submission: Submission, opts: JudgeOptions): Promise<JudgeResult> {
   const lang = LANGUAGES[submission.language];
+  // টেস্ট না থাকলে "সব টেস্ট পাস" = AC হয়ে যেত — সেটা ভুল
+  if (problem.tests.length === 0) {
+    return { verdict: "IE", timeMs: 0, memoryKb: 0, compileOutput: "This problem has no tests yet.", tests: [] };
+  }
   const compileBox = await Box.create(opts.boxId + COMPILE_BOX_OFFSET);
   let box: Box | undefined;
   try {

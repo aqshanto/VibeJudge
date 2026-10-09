@@ -103,6 +103,8 @@ export interface ProblemView {
   id: string;
   slug: string;
   title: string;
+  /** PUBLIC ছাড়া অন্য কিছু হলে দেখছেন শুধু author/admin */
+  visibility: "PRIVATE" | "CONTEST" | "PUBLIC";
   statement: string;
   timeLimitMs: number;
   memoryLimitKb: number;
@@ -138,6 +140,68 @@ export interface AuthorRequestView {
   createdAt: string;
   reviewedAt: string | null;
   user: { username: string; displayName: string | null; email: string };
+}
+
+// ---------- Problem authoring ----------
+
+export const VISIBILITIES = ["PRIVATE", "CONTEST", "PUBLIC"] as const;
+export type Visibility = (typeof VISIBILITIES)[number];
+
+/** ছোট হাতের অক্ষর, সংখ্যা আর "-"; ৩-৪০ অক্ষর */
+export const SLUG_PATTERN = "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$";
+/** Vercel-এর ভেতর দিয়ে একবারে পাঠানো যায় এমন সীমা (base64-সহ ~৩.৪ MB) */
+export const MAX_TEST_FILE_BYTES = 2.5 * 1024 * 1024;
+/** একটা প্রবলেমের সব টেস্ট মিলিয়ে (DB-তে থাকে, তাই আপাতত ছোট) */
+export const MAX_PROBLEM_TESTS_BYTES = 30 * 1024 * 1024;
+export const MAX_TESTS_PER_PROBLEM = 200;
+
+export const LIMITS = {
+  timeMs: { min: 100, max: 15_000 },
+  memoryKb: { min: 16 * 1024, max: 1024 * 1024 },
+} as const;
+
+export interface AuthorProblemSummary {
+  id: string;
+  slug: string;
+  title: string;
+  visibility: Visibility;
+  testCount: number;
+  author: string | null;
+  updatedAt: string;
+}
+
+export interface TestMeta {
+  ordinal: number;
+  isSample: boolean;
+  inputBytes: number;
+  answerBytes: number;
+  /** প্রথম ~২০০ অক্ষর */
+  inputPreview: string;
+  answerPreview: string;
+}
+
+export interface AuthorProblemDetail {
+  id: string;
+  slug: string;
+  title: string;
+  statement: string;
+  timeLimitMs: number;
+  memoryLimitKb: number;
+  visibility: Visibility;
+  checkerSource: string | null;
+  dataVersion: number;
+  tests: TestMeta[];
+  updatedAt: string;
+}
+
+export type ProblemUpdate = Partial<
+  Pick<AuthorProblemDetail, "slug" | "title" | "statement" | "timeLimitMs" | "memoryLimitKb" | "visibility" | "checkerSource">
+>;
+
+/** PUT/POST /api/author/problems/:id/tests — base64 */
+export interface TestUpload {
+  mode: "replace" | "append";
+  tests: { input: string; answer: string; isSample: boolean }[];
 }
 
 export interface HealthResponse {

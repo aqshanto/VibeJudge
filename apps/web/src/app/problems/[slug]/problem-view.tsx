@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { LANGUAGES, MAX_SOURCE_BYTES, type Language, type ProblemView as Problem } from "@vibejudge/shared";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { Markdown } from "@/components/markdown";
 
 const LANGUAGE_NAMES: Record<Language, string> = { c: "C (GCC 14, C17)", cpp: "C++ (GCC 14, C++20)" };
 
@@ -22,6 +23,12 @@ export function ProblemView({ slug }: { slug: string }) {
 
   return (
     <div className="flex flex-col gap-8">
+      {problem.visibility !== "PUBLIC" && (
+        <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+          This problem is {problem.visibility.toLowerCase()} — only you and admins can see it. Submit here to test your
+          tests and checker before publishing.
+        </p>
+      )}
       <header>
         <h1 className="text-3xl font-semibold">{problem.title}</h1>
         <p className="mt-1 text-sm text-zinc-500">
@@ -29,8 +36,7 @@ export function ProblemView({ slug }: { slug: string }) {
         </p>
       </header>
 
-      {/* ফেজ ২-এ Markdown + LaTeX রেন্ডার হবে */}
-      <article className="whitespace-pre-wrap leading-7">{problem.statement}</article>
+      <Markdown>{problem.statement}</Markdown>
 
       {problem.samples.length > 0 && (
         <section className="flex flex-col gap-3">
