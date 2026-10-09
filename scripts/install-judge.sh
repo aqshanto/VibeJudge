@@ -115,4 +115,4 @@ printf '\n\033[1;32m[OK] VibeJudge judge is running on this PC.\033[0m\n'
 echo "  It restarts by itself after a reboot."
 echo "  Update later : run the same command again"
 echo "  See activity : $DOCKER logs -f $NAME"
-echo "  Stop         : $DOCKER rm -f $NAME"
+echo "  Remove all   : curl -fsSL https://raw.githubusercontent.com/$REPO/$BRANCH/scripts/uninstall-judge.sh | bash"

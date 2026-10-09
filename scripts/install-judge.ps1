@@ -78,6 +78,9 @@
     $raw = [IO.File]::ReadAllText($settings)
     if ($raw -match '"AutoStart"\s*:\s*false') {
       [IO.File]::WriteAllText($settings, ($raw -replace '"AutoStart"\s*:\s*false', '"AutoStart": true'), (New-Object Text.UTF8Encoding $false))
+      # uninstall-judge.ps1 turns it back off only if we were the ones who turned it on
+      New-Item -ItemType Directory -Force $Base | Out-Null
+      New-Item -ItemType File -Force (Join-Path $Base "autostart-enabled-by-vibejudge") | Out-Null
       Ok "Docker Desktop will now start automatically when you sign in"
     } elseif ($raw -notmatch '"AutoStart"\s*:\s*true') {
       Write-Host $autoStartHint -ForegroundColor Yellow
@@ -151,5 +154,6 @@
   Write-Host "  It restarts by itself after a reboot (as soon as Docker Desktop is running)."
   Write-Host "  Update later : run the same command again"
   Write-Host "  See activity : docker logs -f $Name"
-  Write-Host "  Stop         : docker rm -f $Name"
+  Write-Host "  Remove all   : double-click remove-judge.bat, or run"
+  Write-Host "                 irm https://raw.githubusercontent.com/$Repo/$Branch/scripts/uninstall-judge.ps1 | iex"
 }

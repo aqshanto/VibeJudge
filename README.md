@@ -54,16 +54,38 @@ pnpm judge:e2e
 (লেখার সময় দেখা যাবে না), পরে মনে রাখবে। পিসি restart হলেও worker নিজে আবার চলে।
 **একই কমান্ড আবার চালালে নতুন কোডে আপডেট হয়।**
 
-**Windows** (PowerShell খুলে; Docker Desktop লাগবে — না থাকলে installer জিজ্ঞেস করে ইনস্টল করে):
+**Windows — সবচেয়ে সহজ: দুটো ফাইল** (pendrive/Drive-এ রেখে ল্যাব পিসিতে কপি করো, তারপর double-click):
+
+| ফাইল | কাজ |
+|---|---|
+| [`start-judge.bat`](https://raw.githubusercontent.com/aqshanto/VibeJudge/main/scripts/start-judge.bat) | judge ইনস্টল করে চালু করে; আবার চালালে আপডেট |
+| [`remove-judge.bat`](https://raw.githubusercontent.com/aqshanto/VibeJudge/main/scripts/remove-judge.bat) | judge বন্ধ করে সব মুছে দেয় (container, image, build cache, কোড, টোকেন) — Docker Desktop থেকে যায় |
+
+(লিংকে right-click → "Save link as…"; নাম যেন `.bat`-ই থাকে, `.txt` না।)
+ফাইলগুলো প্রতিবার GitHub থেকে সর্বশেষ script নামায়, তাই এগুলো কখনো বদলাতে হয় না।
+
+**Windows — কমান্ড দিয়ে** (PowerShell খুলে; Docker Desktop লাগবে — না থাকলে installer জিজ্ঞেস করে ইনস্টল করে):
 
 ```powershell
 irm https://raw.githubusercontent.com/aqshanto/VibeJudge/main/scripts/install-judge.ps1 | iex
+```
+
+সব মুছে ফেলতে:
+
+```powershell
+irm https://raw.githubusercontent.com/aqshanto/VibeJudge/main/scripts/uninstall-judge.ps1 | iex
 ```
 
 **Ubuntu / Linux** (Docker না থাকলে নিজেই ইনস্টল করে):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aqshanto/VibeJudge/main/scripts/install-judge.sh | bash
+```
+
+সব মুছে ফেলতে:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aqshanto/VibeJudge/main/scripts/uninstall-judge.sh | bash
 ```
 
 - সেটিং থাকে `~/.vibejudge/worker.env`-এ (টোকেন আছে — এই ফাইল কাউকে দিও না)
