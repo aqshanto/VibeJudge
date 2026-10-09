@@ -86,8 +86,10 @@ export interface JudgeReport {
 export interface SubmissionView {
   id: string;
   problem: { slug: string; title: string };
+  user: { username: string } | null;
   language: Language;
-  source: string;
+  /** শুধু নিজের সাবমিশনে (বা Admin হলে) থাকে, অন্যদের জন্য null */
+  source: string | null;
   verdict: Verdict;
   timeMs: number | null;
   memoryKb: number | null;
@@ -105,6 +107,37 @@ export interface ProblemView {
   timeLimitMs: number;
   memoryLimitKb: number;
   samples: { input: string; answer: string }[];
+}
+
+// ---------- Auth ----------
+
+/** a-z, 0-9, _ . - ; ৩-২০ অক্ষর; সবসময় lowercase */
+export const USERNAME_PATTERN = "^[a-z0-9_.-]{3,20}$";
+export const PASSWORD_MIN_LENGTH = 8;
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  displayName: string | null;
+  email: string;
+  role: Role;
+}
+
+/** GET /api/auth/me */
+export interface MeResponse {
+  user: AuthUser | null;
+  googleEnabled: boolean;
+}
+
+export type AuthorRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface AuthorRequestView {
+  id: string;
+  message: string;
+  status: AuthorRequestStatus;
+  createdAt: string;
+  reviewedAt: string | null;
+  user: { username: string; displayName: string | null; email: string };
 }
 
 export interface HealthResponse {

@@ -149,11 +149,25 @@ VibeJudge/
 - [ ] Oracle VM-এ Docker ছাড়া সরাসরি isolate (time মাপা আরও স্থির হবে)
 
 ### ফেজ ২ — ইউজার ও প্রবলেম (সপ্তাহ ৩-৪)
-- [ ] সাইনআপ/লগইন (Google + Email), রোল, Author request
-- [ ] প্রবলেম বানানো: স্টেটমেন্ট (Markdown+LaTeX), sample, টেস্ট zip আপলোড, time/memory limit, checker
+
+**২ক — লগইন ও রোল ✅**
+- [x] Email/Password সাইনআপ-লগইন (scrypt hash, httpOnly session কুকি, DB-তে শুধু টোকেনের hash)
+- [x] Google লগইন (GOOGLE_CLIENT_ID/SECRET দিলে চালু হয়)
+- [x] রোল: USER / AUTHOR / ADMIN; `ADMIN_EMAILS` দিয়ে admin
+- [x] Author request → Admin প্যানেলে approve/reject
+- [x] সাবমিট করতে লগইন লাগে; অন্যের সোর্স কোড লুকানো (নিজে + Admin দেখে)
+- [x] Rate limit ল্যাব-বান্ধব: IP না, session/অ্যাকাউন্ট ধরে (১০০০ জন একই IP শেয়ার করে)
+- [ ] ইমেইল ভেরিফিকেশন / পাসওয়ার্ড রিসেট — নিজস্ব ডোমেইন পেলে (Resend)
+
+**২খ — প্রবলেম বানানো**
+- [ ] প্রবলেম বানানো: স্টেটমেন্ট (Markdown+LaTeX), sample, টেস্ট আপলোড, time/memory limit, checker
 - [ ] Visibility: Private / Contest-only / Public
-- [ ] Problem Archive পেজ + প্র্যাকটিস সাবমিট
-- [ ] সাবমিশন পেজ (লাইভ verdict)
+
+**২গ — এডিটর ও তালিকা**
+- [ ] Monaco editor, স্টেটমেন্টে Markdown + LaTeX রেন্ডার
+- [ ] আমার সাবমিশনের তালিকা, প্রবলেম অনুযায়ী সাবমিশন
+- [x] Problem Archive পেজ + প্র্যাকটিস সাবমিট (১খ-তে হয়েছে)
+- [x] সাবমিশন পেজ (লাইভ verdict)
 
 ### ফেজ ৩ — কনটেস্ট (সপ্তাহ ৫-৬)
 - [ ] কনটেস্ট বানানো (ICPC/IOI, Fixed time, Private: পাসওয়ার্ড/ইনভাইট)

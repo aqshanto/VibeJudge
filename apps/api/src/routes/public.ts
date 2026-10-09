@@ -1,7 +1,6 @@
-// ওয়েবসাইটের জন্য পাবলিক endpoint।
-// ফেজ ২-এ লগইন যোগ হলে সাবমিশনে userId বসবে আর অন্যের কোড লুকানো থাকবে।
+// ওয়েবসাইটের জন্য পাবলিক endpoint (প্রবলেম দেখা, সাবমিট, সাবমিশন দেখা)।
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   LANGUAGES,
   MAX_SOURCE_BYTES,
@@ -12,6 +11,8 @@ import {
 } from "@vibejudge/shared";
 import { prisma } from "../db.js";
 import { notifyWork } from "../queue.js";
+import { requireUser } from "../auth/guards.js";
+import { SESSION_COOKIE, getSessionUser } from "../auth/session.js";
 
 export async function publicRoutes(app: FastifyInstance) {
   app.get("/problems", async () => {
@@ -47,8 +48,14 @@ export async function publicRoutes(app: FastifyInstance) {
   app.post<{ Body: { problemSlug: string; language: Language; source: string } }>(
     "/submissions",
     {
-      // লগইন আসার আগ পর্যন্ত IP প্রতি মিনিটে ১০টা
-      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      // ইউজার (session) প্রতি মিনিটে ১০টা — IP ধরে না, কারণ ল্যাবের সবাই একই IP শেয়ার করে
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+          keyGenerator: (req: FastifyRequest) => req.cookies[SESSION_COOKIE] ?? req.ip,
+        },
+      },
       schema: {
         body: {
           type: "object",
@@ -62,6 +69,8 @@ export async function publicRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
+      const user = await requireUser(req, reply);
+      if (!user) return reply;
       const { problemSlug, language, source } = req.body;
       if (Buffer.byteLength(source) > MAX_SOURCE_BYTES) {
         return reply.code(413).send({ error: `Source code is larger than ${MAX_SOURCE_BYTES / 1024} KB` });
@@ -73,7 +82,7 @@ export async function publicRoutes(app: FastifyInstance) {
       if (!problem) return reply.code(404).send({ error: "Problem not found" });
 
       const submission = await prisma!.submission.create({
-        data: { problemId: problem.id, language, source },
+        data: { problemId: problem.id, userId: user.id, language, source },
         select: { id: true },
       });
       notifyWork();
@@ -84,19 +93,24 @@ export async function publicRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/submissions/:id", async (req, reply) => {
     const s = await prisma!.submission.findUnique({
       where: { id: req.params.id },
-      include: { problem: { select: { slug: true, title: true } } },
+      include: { problem: { select: { slug: true, title: true } }, user: { select: { username: true } } },
     });
     if (!s) return reply.code(404).send({ error: "Submission not found" });
+
+    // সোর্স কোড আর compiler output শুধু নিজের (বা Admin) — অন্যরা শুধু verdict দেখবে
+    const viewer = await getSessionUser(req);
+    const canSeeCode = viewer !== null && (viewer.id === s.userId || viewer.role === "ADMIN");
 
     const view: SubmissionView = {
       id: s.id,
       problem: s.problem,
+      user: s.user,
       language: s.language,
-      source: s.source,
+      source: canSeeCode ? s.source : null,
       verdict: s.verdict,
       timeMs: s.timeMs,
       memoryKb: s.memoryKb,
-      compileOutput: s.compileOutput,
+      compileOutput: canSeeCode ? s.compileOutput : null,
       tests: (s.testResults as TestResult[] | null) ?? [],
       createdAt: s.createdAt.toISOString(),
       judgedAt: s.judgedAt?.toISOString() ?? null,

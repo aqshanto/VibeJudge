@@ -42,7 +42,8 @@ export function SubmissionView({ id }: { id: string }) {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
         <p className="text-sm text-zinc-500">
-          Submission <span className="font-mono">{sub.id}</span> ·{" "}
+          Submission <span className="font-mono">{sub.id}</span>
+          {sub.user && <> by {sub.user.username}</>} ·{" "}
           <Link href={`/problems/${sub.problem.slug}`} className="text-sky-700 hover:underline dark:text-sky-400">
             {sub.problem.title}
           </Link>{" "}
@@ -101,12 +102,14 @@ export function SubmissionView({ id }: { id: string }) {
         </section>
       )}
 
-      <section>
-        <h2 className="mb-2 font-semibold">Source</h2>
-        <pre className="max-h-[32rem] overflow-auto rounded-lg bg-black/[.04] p-3 text-xs dark:bg-white/[.06]">
-          {sub.source}
-        </pre>
-      </section>
+      {sub.source !== null && (
+        <section>
+          <h2 className="mb-2 font-semibold">Source</h2>
+          <pre className="max-h-[32rem] overflow-auto rounded-lg bg-black/[.04] p-3 text-xs dark:bg-white/[.06]">
+            {sub.source}
+          </pre>
+        </section>
+      )}
     </div>
   );
 }

@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LANGUAGES, MAX_SOURCE_BYTES, type Language, type ProblemView as Problem } from "@vibejudge/shared";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 const LANGUAGE_NAMES: Record<Language, string> = { c: "C (GCC 14, C17)", cpp: "C++ (GCC 14, C++20)" };
 
@@ -65,6 +67,7 @@ function SubmitForm({ slug }: { slug: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { user, loading: authLoading } = useAuth();
   const tooLarge = new Blob([source]).size > MAX_SOURCE_BYTES;
 
   async function submit(e: React.FormEvent) {
@@ -81,6 +84,20 @@ function SubmitForm({ slug }: { slug: string }) {
       setError((err as Error).message);
       setSubmitting(false);
     }
+  }
+
+  if (!authLoading && !user) {
+    return (
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">Submit</h2>
+        <p className="text-zinc-600 dark:text-zinc-400">
+          <Link href={`/login?next=/problems/${slug}`} className="text-sky-700 hover:underline dark:text-sky-400">
+            Log in
+          </Link>{" "}
+          to submit a solution.
+        </p>
+      </section>
+    );
   }
 
   return (

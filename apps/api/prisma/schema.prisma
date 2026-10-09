@@ -20,10 +20,11 @@ enum Role {
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
-  username     String   @unique
+  email        String   @unique // সবসময় lowercase
+  username     String   @unique // সবসময় lowercase: a-z, 0-9, _ . -
   displayName  String?
-  passwordHash String? // Google লগইন হলে null
+  passwordHash String? // শুধু Google দিয়ে খোলা অ্যাকাউন্টে null
+  googleId     String?  @unique
   role         Role     @default(USER)
   institution  String?
   batch        String?
@@ -31,10 +32,48 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  problems    Problem[]
-  submissions Submission[]
+  problems         Problem[]
+  submissions      Submission[]
+  sessions         Session[]
+  authorRequests   AuthorRequest[] @relation("requester")
+  reviewedRequests AuthorRequest[] @relation("reviewer")
 
   @@map("users")
+}
+
+/// লগইন session। কুকিতে random টোকেন থাকে, DB-তে শুধু তার SHA-256 hash।
+model Session {
+  id        String   @id // sha256(token), hex
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+enum AuthorRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AuthorRequest {
+  id           String              @id @default(cuid())
+  userId       String
+  user         User                @relation("requester", fields: [userId], references: [id], onDelete: Cascade)
+  message      String
+  status       AuthorRequestStatus @default(PENDING)
+  reviewedById String?
+  reviewedBy   User?               @relation("reviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  createdAt    DateTime            @default(now())
+
+  @@index([status, createdAt])
+  @@index([userId])
+  @@map("author_requests")
 }
 
 enum Visibility {

@@ -1,9 +1,12 @@
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import type { HealthResponse } from "@vibejudge/shared";
 import { prisma } from "./db.js";
 import { env } from "./env.js";
+import { authRoutes } from "./routes/auth.js";
+import { authorRoutes } from "./routes/authors.js";
 import { judgeRoutes } from "./routes/judge.js";
 import { publicRoutes } from "./routes/public.js";
 
@@ -13,6 +16,8 @@ export async function buildApp() {
 
   // Web সাধারণত Vercel rewrite দিয়ে একই ডোমেইন থেকে আসবে, তবু সরাসরি কলের জন্য CORS রাখা হলো।
   await app.register(cors, { origin: env.webOrigins, credentials: true });
+  // rate-limit-এর আগে, যাতে keyGenerator কুকি পড়তে পারে
+  await app.register(cookie);
   // শুধু যেসব route-এ config.rateLimit দেওয়া আছে সেগুলোতে
   await app.register(rateLimit, { global: false });
 
@@ -41,6 +46,8 @@ export async function buildApp() {
     };
   });
 
+  await app.register(authRoutes, { prefix: "/api/auth" });
+  await app.register(authorRoutes, { prefix: "/api" });
   await app.register(publicRoutes, { prefix: "/api" });
   await app.register(judgeRoutes, { prefix: "/api/judge" });
 

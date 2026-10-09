@@ -23,3 +23,11 @@ services:
         sync: false # যেমন: https://vibejudge.vercel.app
       - key: JUDGE_TOKEN
         generateValue: true # Render নিজে একটা random টোকেন বানাবে — judge worker-এর .env-এ এটাই দিতে হবে
+      - key: PUBLIC_WEB_URL
+        value: https://vibe-judge.vercel.app # Google লগইন শেষে এখানে ফেরে; https হলে কুকি Secure হয়
+      - key: ADMIN_EMAILS
+        sync: false # কমা দিয়ে ইমেইল — এরা লগইন করলেই ADMIN
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
