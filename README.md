@@ -48,6 +48,30 @@ pnpm judge:e2e
 > কনটেইনার `--privileged` লাগে, কারণ isolate নিজে cgroup আর namespace বানায়।
 > ইউজারের কোড তবুও isolate-এর sandbox-এ চলে: আলাদা user, নেটওয়ার্ক নেই, time/memory সীমিত।
 
+### ল্যাব পিসিকে judge বানানো (এক কমান্ডে)
+
+পিসিতে কিছু clone করতে হবে না — শুধু একটা কমান্ড। প্রথমবার Render-এর `JUDGE_TOKEN` চাইবে
+(লেখার সময় দেখা যাবে না), পরে মনে রাখবে। পিসি restart হলেও worker নিজে আবার চলে।
+**একই কমান্ড আবার চালালে নতুন কোডে আপডেট হয়।**
+
+**Windows** (PowerShell খুলে; Docker Desktop লাগবে — না থাকলে installer জিজ্ঞেস করে ইনস্টল করে):
+
+```powershell
+irm https://raw.githubusercontent.com/aqshanto/VibeJudge/main/scripts/install-judge.ps1 | iex
+```
+
+**Ubuntu / Linux** (Docker না থাকলে নিজেই ইনস্টল করে):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aqshanto/VibeJudge/main/scripts/install-judge.sh | bash
+```
+
+- সেটিং থাকে `~/.vibejudge/worker.env`-এ (টোকেন আছে — এই ফাইল কাউকে দিও না)
+- কাজ দেখা: `docker logs -f vibejudge-worker` · বন্ধ: `docker rm -f vibejudge-worker`
+- এমন পিসি বাছো যেখানে ছাত্ররা লগইন করে না (টোকেন দিয়ে ভুল verdict পাঠানো যায়)
+- পিসি হারালে/নষ্ট হলে Render-এ `JUDGE_TOKEN` বদলে সব পিসিতে কমান্ডটা আবার চালাও
+  (পুরোনো টোকেন মুছতে আগে `~/.vibejudge/worker.env` মুছে দাও)
+
 ---
 
 ## লোকালি চালানো
