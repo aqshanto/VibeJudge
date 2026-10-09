@@ -7,6 +7,7 @@ import {
   type AuthUser,
   type Language,
   type ProblemView,
+  type SubmissionPage,
   type SubmissionView,
   type TestResult,
 } from "@vibejudge/shared";
@@ -21,6 +22,17 @@ function visibleProblem(slug: string, viewer: AuthUser | null): Prisma.ProblemWh
   if (viewer?.role === "ADMIN") return { slug };
   if (viewer) return { slug, OR: [{ visibility: "PUBLIC" }, { authorId: viewer.id }] };
   return { slug, visibility: "PUBLIC" };
+}
+
+/** PUBLIC প্রবলেমের সাবমিশন সবাই দেখে; বাকিগুলো শুধু নিজের, প্রবলেমের author-এর আর admin-এর */
+function visibleSubmissions(viewer: AuthUser | null): Prisma.SubmissionWhereInput {
+  if (viewer?.role === "ADMIN") return {};
+  if (viewer) {
+    return {
+      OR: [{ problem: { visibility: "PUBLIC" } }, { userId: viewer.id }, { problem: { authorId: viewer.id } }],
+    };
+  }
+  return { problem: { visibility: "PUBLIC" } };
 }
 
 export async function publicRoutes(app: FastifyInstance) {
@@ -100,15 +112,71 @@ export async function publicRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get<{ Querystring: { mine?: boolean; user?: string; problem?: string; cursor?: string; limit?: number } }>(
+    "/submissions",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          properties: {
+            mine: { type: "boolean" },
+            user: { type: "string", maxLength: 40 },
+            problem: { type: "string", maxLength: 100 },
+            cursor: { type: "string", maxLength: 40 },
+            limit: { type: "integer", minimum: 1, maximum: 100 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const viewer = await getSessionUser(req);
+      const q = req.query;
+      if (q.mine && !viewer) return reply.code(401).send({ error: "Please log in first" });
+      const limit = q.limit ?? 50;
+
+      const where: Prisma.SubmissionWhereInput = {
+        AND: [
+          visibleSubmissions(viewer),
+          q.mine ? { userId: viewer!.id } : {},
+          q.user ? { user: { username: q.user.toLowerCase() } } : {},
+          q.problem ? { problem: { slug: q.problem } } : {},
+        ],
+      };
+      const rows = await prisma!.submission.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          language: true,
+          verdict: true,
+          timeMs: true,
+          memoryKb: true,
+          createdAt: true,
+          problem: { select: { slug: true, title: true } },
+          user: { select: { username: true } },
+        },
+      });
+
+      const page: SubmissionPage = {
+        submissions: rows.slice(0, limit).map((s) => ({ ...s, createdAt: s.createdAt.toISOString() })),
+        nextCursor: rows.length > limit ? rows[limit - 1]!.id : null,
+      };
+      return page;
+    },
+  );
+
   app.get<{ Params: { id: string } }>("/submissions/:id", async (req, reply) => {
-    const s = await prisma!.submission.findUnique({
-      where: { id: req.params.id },
+    const viewer = await getSessionUser(req);
+    // Private প্রবলেমের সাবমিশন (এমনকি verdict আর প্রবলেমের নামও) বাইরের কেউ দেখবে না
+    const s = await prisma!.submission.findFirst({
+      where: { AND: [{ id: req.params.id }, visibleSubmissions(viewer)] },
       include: { problem: { select: { slug: true, title: true } }, user: { select: { username: true } } },
     });
     if (!s) return reply.code(404).send({ error: "Submission not found" });
 
     // সোর্স কোড আর compiler output শুধু নিজের (বা Admin) — অন্যরা শুধু verdict দেখবে
-    const viewer = await getSessionUser(req);
     const canSeeCode = viewer !== null && (viewer.id === s.userId || viewer.role === "ADMIN");
 
     const view: SubmissionView = {

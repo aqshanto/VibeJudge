@@ -161,5 +161,6 @@ model Submission {
   @@index([verdict, createdAt])
   @@index([problemId, createdAt])
   @@index([userId, createdAt])
+  @@index([createdAt]) // সব সাবমিশনের তালিকা (নতুনগুলো আগে)
   @@map("submissions")
 }

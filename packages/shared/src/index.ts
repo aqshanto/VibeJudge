@@ -99,6 +99,24 @@ export interface SubmissionView {
   judgedAt: string | null;
 }
 
+/** GET /api/submissions — তালিকার একটা সারি (সোর্স কোড ছাড়া) */
+export interface SubmissionRow {
+  id: string;
+  problem: { slug: string; title: string };
+  user: { username: string } | null;
+  language: Language;
+  verdict: Verdict;
+  timeMs: number | null;
+  memoryKb: number | null;
+  createdAt: string;
+}
+
+export interface SubmissionPage {
+  submissions: SubmissionRow[];
+  /** পরের পাতার জন্য; null মানে আর নেই */
+  nextCursor: string | null;
+}
+
 export interface ProblemView {
   id: string;
   slug: string;

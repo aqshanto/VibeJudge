@@ -7,6 +7,8 @@ import { LANGUAGES, MAX_SOURCE_BYTES, type Language, type ProblemView as Problem
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Markdown } from "@/components/markdown";
+import { CodeEditor } from "@/components/code-editor";
+import { SubmissionTable } from "@/components/submission-table";
 
 const LANGUAGE_NAMES: Record<Language, string> = { c: "C (GCC 14, C17)", cpp: "C++ (GCC 14, C++20)" };
 
@@ -51,6 +53,7 @@ export function ProblemView({ slug }: { slug: string }) {
       )}
 
       <SubmitForm slug={problem.slug} />
+      <MySubmissions slug={problem.slug} />
     </div>
   );
 }
@@ -66,6 +69,39 @@ function Sample({ label, text }: { label: string; text: string }) {
   );
 }
 
+function MySubmissions({ slug }: { slug: string }) {
+  const { user } = useAuth();
+  if (!user) return null;
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">My submissions</h2>
+      <SubmissionTable
+        query={`mine=true&problem=${encodeURIComponent(slug)}&limit=20`}
+        showProblem={false}
+        showUser={false}
+        emptyText="You haven't submitted to this problem yet."
+      />
+    </section>
+  );
+}
+
+// লেখা কোড আর বেছে নেওয়া ভাষা এই ব্রাউজারে মনে রাখি (রিফ্রেশ করলে যেন হারিয়ে না যায়)
+const draftKey = (slug: string, lang: Language) => `vj:draft:${slug}:${lang}`;
+const LANG_KEY = "vj:lang";
+function readStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeStorage(key: string, value: string): void {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {}
+}
+
 function SubmitForm({ slug }: { slug: string }) {
   const router = useRouter();
   const [language, setLanguage] = useState<Language>("cpp");
@@ -75,6 +111,25 @@ function SubmitForm({ slug }: { slug: string }) {
 
   const { user, loading: authLoading } = useAuth();
   const tooLarge = new Blob([source]).size > MAX_SOURCE_BYTES;
+
+  // প্রথমবার: আগের ভাষা আর সেই ভাষার draft ফিরিয়ে আনি
+  useEffect(() => {
+    const saved = readStorage(LANG_KEY);
+    const lang = (LANGUAGES as readonly string[]).includes(saved ?? "") ? (saved as Language) : "cpp";
+    setLanguage(lang);
+    setSource(readStorage(draftKey(slug, lang)) ?? "");
+  }, [slug]);
+
+  function changeLanguage(lang: Language) {
+    setLanguage(lang);
+    writeStorage(LANG_KEY, lang);
+    setSource(readStorage(draftKey(slug, lang)) ?? "");
+  }
+
+  function changeSource(value: string) {
+    setSource(value);
+    writeStorage(draftKey(slug, language), value);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -112,7 +167,7 @@ function SubmitForm({ slug }: { slug: string }) {
         <h2 className="text-lg font-semibold">Submit</h2>
         <select
           value={language}
-          onChange={(e) => setLanguage(e.target.value as Language)}
+          onChange={(e) => changeLanguage(e.target.value as Language)}
           className="rounded-md border border-black/15 bg-transparent px-2 py-1 text-sm dark:border-white/20"
         >
           {LANGUAGES.map((l) => (
@@ -122,14 +177,7 @@ function SubmitForm({ slug }: { slug: string }) {
           ))}
         </select>
       </div>
-      {/* ফেজ ২-এ Monaco editor আসবে */}
-      <textarea
-        value={source}
-        onChange={(e) => setSource(e.target.value)}
-        spellCheck={false}
-        placeholder="Paste your code here"
-        className="h-72 w-full rounded-lg border border-black/15 bg-transparent p-3 font-mono text-sm dark:border-white/20"
-      />
+      <CodeEditor value={source} onChange={changeSource} language={language} />
       {tooLarge && <p className="text-sm text-red-600">Code is larger than {MAX_SOURCE_BYTES / 1024} KB.</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button

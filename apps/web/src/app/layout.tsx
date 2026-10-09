@@ -36,6 +36,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/problems" className="text-zinc-600 hover:text-foreground dark:text-zinc-400">
                 Problems
               </Link>
+              <Link href="/submissions" className="text-zinc-600 hover:text-foreground dark:text-zinc-400">
+                Submissions
+              </Link>
               <UserMenu />
             </nav>
           </header>
