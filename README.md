@@ -5,8 +5,25 @@
 ```
 apps/web      → Next.js ওয়েবসাইট (Vercel)
 apps/api      → Fastify API + Prisma (Render)
-packages/shared → web আর api-এর কমন টাইপ (verdict, language, role)
+apps/judge    → Judge worker: isolate sandbox-এ C/C++ চালায় (Docker)
+packages/shared → web, api, judge-এর কমন টাইপ (verdict, language, role)
 ```
+
+## Judge (Docker লাগবে)
+
+```bash
+pnpm judge:build
+```
+
+```bash
+pnpm judge:selftest
+```
+
+`apps/judge/fixtures/`-এর প্রতিটা সমাধান judge করে, ফাইলের নামের verdict-এর সাথে মেলায়
+(যেমন `tle-loop.cpp` → TLE)। নতুন টেস্ট যোগ করতে ওখানে ফাইল রাখলেই হবে।
+
+> কনটেইনার `--privileged` লাগে, কারণ isolate নিজে cgroup আর namespace বানায়।
+> ইউজারের কোড তবুও isolate-এর sandbox-এ চলে: আলাদা user, নেটওয়ার্ক নেই, time/memory সীমিত।
 
 ---
 

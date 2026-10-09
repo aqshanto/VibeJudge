@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+**/.next
+**/.env
+**/.env.*
+.git
+.claude
+apps/web
+apps/api
+apps/judge/fixtures

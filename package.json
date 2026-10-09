@@ -10,6 +10,8 @@
     "dev:web": "pnpm --filter @vibejudge/web dev",
     "dev:api": "pnpm --filter @vibejudge/api dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "judge:build": "docker build -f apps/judge/Dockerfile -t vibejudge-judge .",
+    "judge:selftest": "docker run --rm --privileged --cgroupns=private -v ./apps/judge/fixtures:/fixtures:ro vibejudge-judge node dist/selftest.js /fixtures"
   }
 }

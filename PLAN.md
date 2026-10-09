@@ -128,11 +128,22 @@ VibeJudge/
 - [x] Neon ডাটাবেস + Prisma কানেক্ট + প্রথম migration (`init`)
 
 ### ফেজ ১ — Judge কোর (সপ্তাহ ১-২) ⭐ সবচেয়ে গুরুত্বপূর্ণ
-- [ ] Docker-এ isolate + gcc/g++ (তোমার পিসিতে WSL2/Docker দিয়ে)
-- [ ] C/C++ compile → টেস্ট রান → output মেলানো
-- [ ] সব verdict + time/memory মাপা
-- [ ] API থেকে কাজ টানা (pull) আর রেজাল্ট পাঠানো
-- [ ] testlib checker সাপোর্ট (special judge)
+**১ক — Sandbox ও verdict ✅**
+- [x] Docker-এ isolate v2.7 + gcc/g++ 14 (Debian trixie), privileged কনটেইনার + cgroup v2
+- [x] C/C++ compile → টেস্ট রান → output মেলানো (token compare)
+- [x] সব verdict (AC/WA/TLE/MLE/RE/CE) + time/memory মাপা
+- [x] testlib checker সাপোর্ট (special judge)
+- [x] Self-test: `pnpm judge:build && pnpm judge:selftest` (১২টা সমাধান, সব verdict)
+
+**১খ — API-র সাথে যুক্ত করা**
+- [ ] DB-তে Problem/TestCase/Submission টেবিল
+- [ ] API থেকে কাজ টানা (pull) আর রেজাল্ট পাঠানো (worker token দিয়ে)
+- [ ] একসাথে একাধিক সাবমিশন (CPU অনুযায়ী parallel box)
+- [ ] টেস্ট ডাটা ডাউনলোড + cache
+
+**পরে উন্নতি**
+- [ ] `bits/stdc++.h` precompiled header — এখন C++ compile-এ ~১.৭ সেকেন্ড লাগে (C-তে ~০.১)
+- [ ] Oracle VM-এ Docker ছাড়া সরাসরি isolate (time মাপা আরও স্থির হবে)
 
 ### ফেজ ২ — ইউজার ও প্রবলেম (সপ্তাহ ৩-৪)
 - [ ] সাইনআপ/লগইন (Google + Email), রোল, Author request
