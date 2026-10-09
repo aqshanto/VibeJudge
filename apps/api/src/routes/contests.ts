@@ -184,6 +184,18 @@ async function loadStandings(contest: LoadedContest, freezeAt: Date | null) {
   });
 }
 
+/**
+ * If-None-Match মেলে কি না। Render-এর সামনের Cloudflare gzip করার সময় আমাদের `"abc"` ETag-কে
+ * weak `W/"abc"` বানিয়ে দেয় — ব্রাউজার সেটাই ফেরত পাঠায়। তাই `W/` বাদ দিয়ে তুলনা (RFC 9110-এর
+ * weak comparison), আর কমা দিয়ে একাধিক ETag থাকলেও চলে।
+ */
+function etagMatches(header: string | undefined, etag: string): boolean {
+  if (!header) return false;
+  const strip = (t: string) => t.trim().replace(/^W\//, "");
+  const target = strip(etag);
+  return header.split(",").some((t) => t.trim() === "*" || strip(t) === target);
+}
+
 /** CSV-এর একটা ঘর — কমা/উদ্ধৃতি থাকলে quote; "=", "+", "-", "@" দিয়ে শুরু হলে Excel যেন সূত্র না ভাবে */
 function csvCell(value: string | number | null): string {
   let v = value === null ? "" : String(value);
@@ -371,7 +383,7 @@ export async function contestRoutes(app: FastifyInstance) {
 
     // ব্রাউজার আগের ETag পাঠালে আর কিছু না বদলালে শুধু 304 (প্রায় ০ বাইট)
     reply.header("etag", etag).header("cache-control", "private, no-cache").header("vary", "accept-encoding");
-    if (req.headers["if-none-match"] === etag) return reply.code(304).send();
+    if (etagMatches(req.headers["if-none-match"], etag)) return reply.code(304).send();
     reply.type("application/json; charset=utf-8");
     if (/gzip/.test(req.headers["accept-encoding"] ?? "")) {
       // আগে থেকে compress করা — compress plugin content-encoding দেখে আর হাত দেয় না
